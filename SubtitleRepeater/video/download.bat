@@ -1,0 +1,1 @@
+yt-dlp -f "bv[height<=720]+ba/b[height<=720]" --merge-output-format mp4 --write-auto-sub --sub-lang en --sub-format "best" https://www.youtube.com/watch?v=QAV-a7Pxg9E&t=1s
