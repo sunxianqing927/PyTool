@@ -5,50 +5,70 @@ import threading
 import os
 import json
 import time
-import socket
 import pysrt
 import webvtt
 
-# === 设置 ===
+# === 原子变量类 ===
+class AtomicInteger:
+    def __init__(self, value=0):
+        self._value = value
+        self._lock = threading.Lock()
+
+    def get(self):
+        with self._lock:
+            return self._value
+
+    def set(self, value):
+        with self._lock:
+            self._value = value
+
+    def increment(self):
+        with self._lock:
+            self._value += 1
+            return self._value
+
+    def decrement(self):
+        with self._lock:
+            self._value -= 1
+            return self._value
+
+# === 全局变量 ===
 MPV_SOCKET_PATH = r"\\.\pipe\mpvsocket"
 video_path = ""
 subtitle_path = ""
-subtitles = []  # [(start_seconds, end_seconds, text), ...]
-current_index = 0
+subtitles = []
+g_current_index = AtomicInteger(0)
 paused = False
 
-# === 自动查找字幕（根据视频文件名） ===
+# === 自动查找字幕 ===
 def auto_find_subtitle():
     global subtitle_path
     if not video_path:
         return
     base = os.path.splitext(video_path)[0]
-    srt = base + ".en.srt"
-    vtt = base + ".en.vtt"
-    if os.path.exists(srt):
-        subtitle_path = srt
-    elif os.path.exists(vtt):
-        subtitle_path = vtt
+    for ext in [".en.srt", ".en.vtt"]:
+        test_path = base + ext
+        if os.path.exists(test_path):
+            subtitle_path = test_path
+            break
     else:
-        print("未检测到对应字幕文件 (.en.srt 或 .en.vtt)，请点击【加载字幕文件】手动选择。")
+        print("未检测到字幕文件")
         return
     subtitle_label.config(text=f"字幕: {os.path.basename(subtitle_path)}")
     load_subtitles()
+    update_progress_controls()
 
-# === 载入字幕（支持 .srt 和 .vtt） ===
+# === 加载字幕 ===
 def load_subtitles():
     global subtitles
     if not os.path.exists(subtitle_path):
         messagebox.showerror("错误", "字幕文件未找到！")
         return []
-
     try:
         if subtitle_path.lower().endswith('.srt'):
             subs = pysrt.open(subtitle_path)
-            subtitles = [(sub.start.hours * 3600 + sub.start.minutes * 60 + sub.start.seconds + sub.start.milliseconds / 1000,
-                          sub.end.hours * 3600 + sub.end.minutes * 60 + sub.end.seconds + sub.end.milliseconds / 1000,
+            subtitles = [(sub.start.ordinal / 1000, sub.end.ordinal / 1000,
                           sub.text.strip().replace('\n', ' ')) for sub in subs]
-
         elif subtitle_path.lower().endswith('.vtt'):
             subs = webvtt.read(subtitle_path)
             subtitles = []
@@ -56,25 +76,17 @@ def load_subtitles():
                 h1, m1, s1 = caption.start.split(':')
                 s1, ms1 = s1.split('.')
                 start_sec = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
-
                 h2, m2, s2 = caption.end.split(':')
                 s2, ms2 = s2.split('.')
                 end_sec = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
-
                 subtitles.append((start_sec, end_sec, caption.text.strip().replace('\n', ' ')))
-        else:
-            messagebox.showerror("错误", "仅支持 .srt 和 .vtt 格式字幕")
-            subtitles = []
-            return []
-
         return subtitles
-
     except Exception as e:
         messagebox.showerror("字幕解析错误", str(e))
         subtitles = []
         return []
 
-# === 选择视频文件 ===
+# === 文件选择 ===
 def select_video():
     global video_path
     path = filedialog.askopenfilename(filetypes=[("视频文件", "*.mp4;*.mkv;*.avi"), ("所有文件", "*.*")])
@@ -83,7 +95,6 @@ def select_video():
         video_label.config(text=f"视频: {os.path.basename(path)}")
         auto_find_subtitle()
 
-# === 选择字幕文件 ===
 def select_subtitle():
     global subtitle_path
     path = filedialog.askopenfilename(filetypes=[("字幕文件", "*.srt;*.vtt"), ("所有文件", "*.*")])
@@ -91,39 +102,45 @@ def select_subtitle():
         subtitle_path = path
         subtitle_label.config(text=f"字幕: {os.path.basename(path)}")
         load_subtitles()
+        update_progress_controls()
 
-# === 启动 mpv 播放器 ===
+# === 启动播放 ===
 def start_mpv():
-    global paused, current_index
+    global paused
     if not os.path.exists(video_path):
         messagebox.showerror("错误", "未找到视频文件！")
         return
-
     try:
-        skip_count = 0
-        try:
-            skip_count = int(skip_entry.get())
-        except:
-            pass
-        current_index = skip_count
+        idx = g_current_index.get()
+        if idx < 0 or (len(subtitles) > 0 and idx >= len(subtitles)):
+            idx = 0
+        g_current_index.set(idx)
 
-        subprocess.Popen([
-            "mpv", video_path,
-            f"--input-ipc-server={MPV_SOCKET_PATH}"
-        ])
+        cmd = ["mpv", video_path, f"--input-ipc-server={MPV_SOCKET_PATH}"]
+
+        if show_subtitle.get():
+            if subtitle_path and os.path.exists(subtitle_path):
+                cmd.append(f"--sub-file={subtitle_path}")
+                print(f"加载字幕：{subtitle_path}")
+            else:
+                messagebox.showwarning("警告", "显示字幕已选中，但未找到有效字幕文件")
+        else:
+            cmd.append("--no-sub")
+            print("不加载字幕")
+
+        subprocess.Popen(cmd)
         time.sleep(1)
         paused = False
         threading.Thread(target=auto_repeat_all, daemon=True).start()
     except Exception as e:
         messagebox.showerror("启动失败", f"无法启动 mpv：{e}")
 
-# === 播放/暂停切换 ===
+# === 控制播放 ===
 def toggle_pause():
     global paused
     paused = not paused
     toggle_button.config(text="继续播放" if paused else "暂停播放")
 
-# === mpv 跳转函数 ===
 def seek_to(seconds):
     try:
         with open(MPV_SOCKET_PATH, "wb") as sock:
@@ -134,47 +151,161 @@ def seek_to(seconds):
     except Exception as e:
         messagebox.showerror("通信错误", f"无法连接 mpv：{e}")
 
-# === 自动复读所有句子 ===
-def auto_repeat_all():
-    global current_index
+def pause_mpv():
     try:
-        repeat_count = int(repeat_entry.get())
-    except:
-        repeat_count = 3
-    while current_index < len(subtitles):
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = { "command": ["set_property", "pause", True] }
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"暂停失败: {e}")
+
+def resume_mpv():
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = { "command": ["set_property", "pause", False] }
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"恢复播放失败: {e}")
+
+
+def auto_repeat_all():
+    while True:
+        index = g_current_index.get()
+        if index >= len(subtitles):
+            break
+        
         if paused:
             time.sleep(0.1)
             continue
-        start_sec, end_sec, text = subtitles[current_index]
-        duration = end_sec - start_sec
+                
+        try:
+            repeat_count = int(repeat_entry.get())
+        except:
+            repeat_count = 3
+
+        try:
+            delay_after_repeat = float(pause_entry.get())
+            if delay_after_repeat < 0:
+                delay_after_repeat = 0
+        except:
+            delay_after_repeat = 0
+
+        try:
+            speed = float(speed_slider.get())
+            if speed < 0.1:
+                speed = 0.1
+        except:
+            speed = 1.0
+    
+        try:
+            with open(MPV_SOCKET_PATH, "wb") as sock:
+                command = {"command": ["set_property", "speed", speed]}
+                sock.write((json.dumps(command) + "\n").encode("utf-8"))
+        except Exception as e:
+              print(f"设置播放速度失败: {e}")
+              
+        start_sec, end_sec, _ = subtitles[index]
+        duration = (end_sec - start_sec) / speed
+
         for _ in range(repeat_count):
             if paused:
                 break
             seek_to(start_sec)
-            time.sleep(duration)
-        current_index += 1
+            start_time = time.time()
+            while time.time() - start_time < duration:
+                if g_current_index.get() != index:
+                    break
+                time.sleep(0.1)
+            else:
+                continue
+            break
 
-# === 创建GUI ===
+        if g_current_index.get() == index:
+            if delay_after_repeat > 0:
+                pause_mpv()
+                time.sleep(delay_after_repeat)
+                resume_mpv()
+            g_current_index.increment()
+
+        update_progress_controls()
+
+# === 控件联动 ===
+def on_slider_change(value):
+    g_current_index.set(int(float(value)))
+    current_index_label.config(text=str(g_current_index.get()))
+    update_count_label()
+
+def on_prev():
+    if g_current_index.get() > 0:
+        g_current_index.decrement()
+        update_progress_controls()
+
+def on_next():
+    if g_current_index.get() < len(subtitles) - 1:
+        g_current_index.increment()
+        update_progress_controls()
+
+def update_progress_controls():
+    if len(subtitles) == 0:
+        return
+    index = g_current_index.get()
+    skip_slider.config(to=len(subtitles)-1)
+    skip_slider.set(index)
+    current_index_label.config(text=str(index))
+    update_count_label()
+
+def update_count_label():
+    count_label.config(text=f"/ {len(subtitles)}")
+
+# === UI ===
 root = tk.Tk()
-root.title("Subtitle Repeater (Simple Repeat Mode)")
+root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
 video_label.pack()
 
+show_subtitle = tk.BooleanVar(value=False)
+tk.Checkbutton(root, text="显示字幕", variable=show_subtitle).pack()
+
 tk.Button(root, text="选择字幕文件 (.srt 或 .vtt)", command=select_subtitle).pack(pady=5)
 subtitle_label = tk.Label(root, text="字幕: 未选择")
 subtitle_label.pack()
 
-tk.Label(root, text="复读次数:").pack()
-repeat_entry = tk.Entry(root, width=5)
+repeat_frame = tk.Frame(root)
+repeat_frame.pack(pady=3)
+tk.Label(repeat_frame, text="复读次数:").pack(side=tk.LEFT)
+repeat_entry = tk.Entry(repeat_frame, width=5)
 repeat_entry.insert(0, "3")
-repeat_entry.pack()
+repeat_entry.pack(side=tk.LEFT)
 
-tk.Label(root, text="跳过前几句:").pack()
-skip_entry = tk.Entry(root, width=5)
-skip_entry.insert(0, "0")
-skip_entry.pack()
+pause_frame = tk.Frame(root)
+pause_frame.pack(pady=3)
+tk.Label(pause_frame, text="复读后暂停N秒:").pack(side=tk.LEFT)
+pause_entry = tk.Entry(pause_frame, width=5)
+pause_entry.insert(0, "0")
+pause_entry.pack(side=tk.LEFT)
+
+# 播放速度设置
+speed_frame = tk.Frame(root)
+speed_frame.pack(pady=3)
+tk.Label(speed_frame, text="播放速度:").pack(side=tk.LEFT)
+
+speed_slider = tk.Scale(speed_frame, from_=0.1, to=2.0, resolution=0.1,orient=tk.HORIZONTAL, length=200)
+speed_slider.set(1.0)  # 默认 1 倍速
+speed_slider.pack(side=tk.LEFT)
+
+skip_slider = tk.Scale(root, from_=0, to=10, orient=tk.HORIZONTAL, length=300, command=on_slider_change)
+skip_slider.pack()
+
+skip_frame = tk.Frame(root)
+skip_frame.pack(pady=3)
+current_index_label = tk.Label(skip_frame, text="0", width=5)
+current_index_label.pack(side=tk.LEFT)
+count_label = tk.Label(skip_frame, text="/ 0")
+count_label.pack(side=tk.LEFT, padx=5)
+tk.Button(skip_frame, text="上一句", command=on_prev).pack(side=tk.LEFT, padx=5)
+tk.Button(skip_frame, text="下一句", command=on_next).pack(side=tk.LEFT)
 
 tk.Button(root, text="启动 mpv 播放器并开始复读", command=start_mpv).pack(pady=10)
 toggle_button = tk.Button(root, text="暂停播放", command=toggle_pause)
