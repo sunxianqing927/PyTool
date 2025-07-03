@@ -4,8 +4,8 @@ import pysrt
 from datetime import datetime
 
 # === 可调参数 ===
-FILENAME = "Silicon.Valley.S01E01.en.srt"  # 字幕文件名
-OFFSET_SECONDS = -0.2                       # 偏移秒数（正数为延后，负数为提前）
+FILENAME = "Rick and Morty.S01E02.en.srt"  # 字幕文件名
+OFFSET_SECONDS = -14.318                        # 偏移秒数（正数为提前，负数为延后）
 REMOVE_DUPLICATES = False                  # 是否去除时间重复的字幕
 
 # === 转换 float 秒为 SubRipTime ===

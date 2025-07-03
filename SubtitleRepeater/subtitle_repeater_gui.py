@@ -169,11 +169,12 @@ def resume_mpv():
 
 
 def auto_repeat_all():
+    speed = 1.0
     while True:
         index = g_current_index.get()
         if index >= len(subtitles):
             break
-        
+
         if paused:
             time.sleep(0.1)
             continue
@@ -191,18 +192,22 @@ def auto_repeat_all():
             delay_after_repeat = 0
 
         try:
-            speed = float(speed_slider.get())
-            if speed < 0.1:
-                speed = 0.1
+            speedTmp = float(speed_slider.get())
+            if speedTmp != speed:
+                speed = speedTmp
+                if speed < 0.1:
+                    speed = 0.1
+
+                try:
+                     with open(MPV_SOCKET_PATH, "wb") as sock:
+                         command = {"command": ["set_property", "speed", speed]}
+                         sock.write((json.dumps(command) + "\n").encode("utf-8"))
+                except Exception as e:
+                    print(f"设置播放速度失败: {e}")
         except:
             speed = 1.0
     
-        try:
-            with open(MPV_SOCKET_PATH, "wb") as sock:
-                command = {"command": ["set_property", "speed", speed]}
-                sock.write((json.dumps(command) + "\n").encode("utf-8"))
-        except Exception as e:
-              print(f"设置播放速度失败: {e}")
+ 
               
         start_sec, end_sec, _ = subtitles[index]
         duration = (end_sec - start_sec) / speed
