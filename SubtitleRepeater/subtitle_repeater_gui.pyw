@@ -128,6 +128,11 @@ def start_mpv():
             cmd.append("--no-sub")
             print("不加载字幕")
 
+        if fullscreen.get():
+            cmd.append("--fs")
+        else:
+            cmd.append("--geometry=100%:100%")  # 尽可能最大化
+
         subprocess.Popen(cmd)
         time.sleep(1)
         paused = False
@@ -270,12 +275,18 @@ tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
 video_label.pack()
 
-show_subtitle = tk.BooleanVar(value=False)
-tk.Checkbutton(root, text="显示字幕", variable=show_subtitle).pack()
-
 tk.Button(root, text="选择字幕文件 (.srt 或 .vtt)", command=select_subtitle).pack(pady=5)
 subtitle_label = tk.Label(root, text="字幕: 未选择")
 subtitle_label.pack()
+
+options_frame = tk.Frame(root)
+options_frame.pack()
+
+show_subtitle = tk.BooleanVar(value=False)
+tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(side=tk.LEFT, padx=10)
+
+fullscreen = tk.BooleanVar(value=True)
+tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
 repeat_frame = tk.Frame(root)
 repeat_frame.pack(pady=3)
