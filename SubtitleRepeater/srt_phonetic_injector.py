@@ -3,14 +3,23 @@ import sys
 import re
 import json
 import shutil
+import tkinter as tk
+from tkinter import messagebox
 
 # 切换工作目录到脚本所在目录
 script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 os.chdir(script_dir)
 
 
-# 加载音标字典
-with open("dictionary.json", "r", encoding="utf-8") as f:
+def resource_path(relative_path):
+    """获取打包后资源的绝对路径"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+
+# 修改加载方式
+with open(resource_path("dictionary.json"), "r", encoding="utf-8") as f:
     dictionary = json.load(f)
 
 
@@ -65,4 +74,7 @@ for filename in os.listdir("."):
 
         print(f"✅ 处理完成并覆盖：{filename}")
 
-print("🎉 所有字幕文件处理完成。")
+# 弹窗提示
+root = tk.Tk()
+root.withdraw()  # 隐藏主窗口
+messagebox.showinfo("处理完成", "🎉 所有字幕文件处理完成！")

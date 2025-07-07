@@ -1,1 +1,1 @@
-pyinstaller --noconsole --onefile "Looping Countdown.pyw"
+pyinstaller --noconsole --onefile --add-data "dictionary.json;." srt_phonetic_injector.py
