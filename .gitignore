@@ -12,3 +12,35 @@ SubtitleRepeater/video/Silicon.Valley.S01E01.en.srt
 SubtitleRepeater/video/backup_srt/Silicon.Valley.S01E01.en.srt.20250703_075441.bak.srt
 SubtitleRepeater/video/backup_srt/Silicon.Valley.S01E01.en.srt.20250703_075656.bak.srt
 SubtitleRepeater/video/backup_srt/Silicon.Valley.S01E01.en.srt.20250703_075719.bak.srt
+SubtitleRepeater/build/Looping Countdown/Analysis-00.toc
+SubtitleRepeater/build/Looping Countdown/base_library.zip
+SubtitleRepeater/build/Looping Countdown/EXE-00.toc
+SubtitleRepeater/build/Looping Countdown/Looping Countdown.pkg
+SubtitleRepeater/build/Looping Countdown/PKG-00.toc
+SubtitleRepeater/build/Looping Countdown/PYZ-00.pyz
+SubtitleRepeater/build/Looping Countdown/PYZ-00.toc
+SubtitleRepeater/build/Looping Countdown/warn-Looping Countdown.txt
+SubtitleRepeater/build/Looping Countdown/xref-Looping Countdown.html
+SubtitleRepeater/build/Looping Countdown/localpycs/pyimod01_archive.pyc
+SubtitleRepeater/build/Looping Countdown/localpycs/pyimod02_importers.pyc
+SubtitleRepeater/build/Looping Countdown/localpycs/pyimod03_ctypes.pyc
+SubtitleRepeater/build/Looping Countdown/localpycs/pyimod04_pywin32.pyc
+SubtitleRepeater/build/Looping Countdown/localpycs/struct.pyc
+SubtitleRepeater/build/subtitle_repeater_gui/Analysis-00.toc
+SubtitleRepeater/build/subtitle_repeater_gui/base_library.zip
+SubtitleRepeater/build/subtitle_repeater_gui/EXE-00.toc
+SubtitleRepeater/build/subtitle_repeater_gui/PKG-00.toc
+SubtitleRepeater/build/subtitle_repeater_gui/PYZ-00.pyz
+SubtitleRepeater/build/subtitle_repeater_gui/PYZ-00.toc
+SubtitleRepeater/build/subtitle_repeater_gui/subtitle_repeater_gui.pkg
+SubtitleRepeater/build/subtitle_repeater_gui/warn-subtitle_repeater_gui.txt
+SubtitleRepeater/build/subtitle_repeater_gui/xref-subtitle_repeater_gui.html
+SubtitleRepeater/build/subtitle_repeater_gui/localpycs/pyimod01_archive.pyc
+SubtitleRepeater/build/subtitle_repeater_gui/localpycs/pyimod02_importers.pyc
+SubtitleRepeater/build/subtitle_repeater_gui/localpycs/pyimod03_ctypes.pyc
+SubtitleRepeater/build/subtitle_repeater_gui/localpycs/pyimod04_pywin32.pyc
+SubtitleRepeater/build/subtitle_repeater_gui/localpycs/struct.pyc
+SubtitleRepeater/dist/Looping Countdown.exe
+SubtitleRepeater/dist/subtitle_repeater_gui.exe
+SubtitleRepeater/Looping Countdown.spec
+SubtitleRepeater/subtitle_repeater_gui.spec
