@@ -92,7 +92,7 @@ def load_subtitles():
                 (
                     sub.start.ordinal / 1000,
                     sub.end.ordinal / 1000,
-                    sub.text.strip().replace("\n", " "),
+                    sub.text.strip(),
                 )
                 for sub in subs
             ]
@@ -361,9 +361,11 @@ def seek_to(seconds):
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "time-pos", seconds]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
+            print(f"seek_to success")
+            time.sleep(0.01)
         return True
     except Exception as e:
-        print(f"通信错误:无法连接 mpv, {e}")
+        print(f"seek_to，通信错误:无法连接 mpv, {e}")
         # messagebox.showerror("通信错误", f"无法连接 mpv：{e}")
     return False
 
@@ -373,8 +375,10 @@ def pause_mpv():
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "pause", True]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
+            print(f"pause_mpv success")
+            time.sleep(0.01)
     except Exception as e:
-        print(f"暂停失败: {e}")
+        print(f"pause_mpv失败: {e}")
 
 
 def resume_mpv():
@@ -382,8 +386,11 @@ def resume_mpv():
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "pause", False]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
+            print(f"resume_mpv success")
+            time.sleep(0.01)
     except Exception as e:
-        print(f"恢复播放失败: {e}")
+
+        print(f"resume_mpv失败: {e}")
 
 
 def auto_repeat_all():
