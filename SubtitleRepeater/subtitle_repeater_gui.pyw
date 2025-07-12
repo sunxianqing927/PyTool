@@ -10,6 +10,8 @@ import webvtt
 import pysubs2
 import re
 import datetime
+import threading
+import keyboard  # 全局键盘监听
 
 
 # === 原子变量类 ===
@@ -267,30 +269,21 @@ def show_subtitle_window():
     update_subtitle_window()  # 初始显示
 
 
-def add_newline_before_last_brackets(text: str) -> str:
-    """
-    将最后一个成对的 [xxx] 之前插入换行符。
-    如果不存在这样的 [xxx]，原样返回。
-    """
-    match = re.search(r"\[.*\](?!.*\[)", text)
-    if match:
-        start = match.start()
-        return text[:start] + "\n" + text[start:]
-    else:
-        return text
-
-
 def update_subtitle_window():
     if not subtitle_labels or not subtitles:
         return
     index = g_current_index.get()
-    prev_text = add_newline_before_last_brackets(
-        subtitles[index - 1][2] if index > 0 else ""
-    )
-    curr_text = add_newline_before_last_brackets(subtitles[index][2])
-    next_text = add_newline_before_last_brackets(
-        subtitles[index + 1][2] if index + 1 < len(subtitles) else ""
-    )
+    prev_text = subtitles[index - 1][2] if index > 0 else ""
+    curr_text = subtitles[index][2]
+
+    lines = curr_text.splitlines()
+    odd_lines = [line for i, line in enumerate(lines) if i % 2 == 0]
+    even_lines = [f"[ {line} ]" for i, line in enumerate(lines) if i % 2 == 1]
+    odd_text = "\n".join(odd_lines)
+    even_text = "\n".join(even_lines)
+    curr_text = f"{odd_text}\n{even_text}"
+
+    next_text = subtitles[index + 1][2] if index + 1 < len(subtitles) else ""
 
     subtitle_labels[0].config(text=prev_text, font=("Helvetica", 18), fg="#888888")
     subtitle_labels[1].config(
@@ -328,10 +321,12 @@ def start_mpv():
         # 设置播放屏幕位置
         if second_screen.get():
             cmd.append("--geometry=0:-1080")  # 第二屏（上方）
+            cmd.append(" --autofit-larger=100%x100% ")
         else:
-            cmd.append("--geometry=0:0")  # 主屏
+            cmd.append("--geometry=430:360")  # 设置位置
+            cmd.append("--autofit=1196x703")  # 设置大小（固定）
 
-        cmd.append(" --autofit-larger=100%x100% --border=no ")
+        cmd.append(" --border=no ")
 
         subprocess.Popen(cmd)
         time.sleep(1)
@@ -423,6 +418,13 @@ def auto_repeat_all():
                 delay_after_repeat = 0
 
             try:
+                continue_count = int(continue_entry.get())
+                if continue_count < 0:
+                    continue_count = 0
+            except:
+                continue_count = 0
+
+            try:
                 speedTmp = float(speed_slider.get())
                 if speedTmp != speed:
                     speed = speedTmp
@@ -438,19 +440,30 @@ def auto_repeat_all():
             except:
                 speed = 1.0
 
-            start_sec = subtitles[index][0]
-            end_sec = subtitles[index + 1][0]
-            duration = (end_sec - start_sec) / speed
             update_subtitle_window()
+            update_progress_controls()
             Interrupted = False
             for _ in range(repeat_count):
-                if paused:
-                    Interrupted = True
-                    break
-                seek_to(start_sec - 0.01)
+
+                start_sec = subtitles[index][0] + adjust_begin_slider.get()
+                end_sec = subtitles[index + 1][0] + adjust_end_slider.get()
+                duration = (end_sec - start_sec) / speed
+                duration_speed = duration / speed
+                duration_half = duration / 2
+
+                if not seek_to(start_sec):
+                    print("auto_repeat_all exit")
+                    return
+                current_repeat_label.after(
+                    0,
+                    lambda: current_repeat_label.config(
+                        text="当前复读次数: " + str(_ + 1)
+                    ),
+                )
+
                 start_time = time.time()
-                while time.time() - start_time < duration:
-                    if g_current_index.get() != index:
+                while time.time() - start_time < duration_speed:
+                    if g_current_index.get() != index or paused:
                         Interrupted = True
                         break
                     time.sleep(0.01)
@@ -459,9 +472,22 @@ def auto_repeat_all():
                 if Interrupted:
                     break
 
-                if repeat_intrval_sec > 0:
+                if continue_count > 0:
+                    continue_count -= 1
+                    continue
+                elif repeat_intrval_sec > 0:
                     pause_mpv()
-                    time.sleep(repeat_intrval_sec * duration)
+                    if not seek_to(start_sec + duration_half):
+                        print("auto_repeat_all exit")
+                        return
+                    elapsed = 0
+                    while elapsed < repeat_intrval_sec * duration_speed:
+                        time.sleep(0.1)
+                        # 可以在这里插入中断判断等逻辑，比如检查是否暂停/取消
+                        elapsed += 0.1
+                        if g_current_index.get() != index or paused:
+                            Interrupted = True
+                            break
                     resume_mpv()
 
             if Interrupted:
@@ -473,7 +499,6 @@ def auto_repeat_all():
                 resume_mpv()
 
             g_current_index.increment()
-            update_progress_controls()
     except Exception as e:
         print(f"auto_repeat_all exit: {e}")
 
@@ -504,6 +529,12 @@ def update_progress_controls():
     skip_slider.config(to=len(subtitles) - 1)
     skip_slider.set(index)
     current_index_label.config(text=str(index))
+    lines = subtitles[index][2].splitlines()
+
+    filtered_lines = [line for i, line in enumerate(lines) if i % 2 == 0]
+    new_text = "\n".join(filtered_lines)
+    subtitle_text.delete("1.0", tk.END)
+    subtitle_text.insert(tk.END, new_text)
     update_count_label()
 
 
@@ -511,9 +542,22 @@ def update_count_label():
     count_label.config(text=f"/ {len(subtitles)}")
 
 
+def listen_global_key():
+    # 线程安全地更新 label
+    keyboard.add_hotkey("left", lambda: on_prev())
+    keyboard.add_hotkey("right", lambda: on_next())
+    keyboard.add_hotkey("space", lambda: toggle_pause())
+    keyboard.wait()  # 保持监听线程运行
+
+
+# 启动键盘监听线程
+threading.Thread(target=listen_global_key, daemon=True).start()
+
+
 # === UI ===
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
+root.geometry("421x600+5+335")
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
@@ -533,10 +577,10 @@ tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(
     side=tk.LEFT, padx=10
 )
 
-fullscreen = tk.BooleanVar(value=True)
+fullscreen = tk.BooleanVar(value=False)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
-second_screen = tk.BooleanVar(value=True)  # 默认在第二屏幕
+second_screen = tk.BooleanVar(value=False)  # 默认在第二屏幕
 tk.Checkbutton(options_frame, text="在第二屏幕播放", variable=second_screen).pack(
     side=tk.LEFT, padx=10
 )
@@ -554,12 +598,44 @@ repeat_intrval_entry = tk.Entry(repeat_frame, width=5)
 repeat_intrval_entry.insert(0, "5")
 repeat_intrval_entry.pack(side=tk.LEFT)
 
+current_repeat_label = tk.Label(repeat_frame, text="当前复读次数: 0", width=20)
+current_repeat_label.pack(side=tk.LEFT)
+
 pause_frame = tk.Frame(root)
 pause_frame.pack(pady=3)
+tk.Label(pause_frame, text="连续复读次数:").pack(side=tk.LEFT)
+continue_entry = tk.Entry(pause_frame, width=5)
+continue_entry.insert(0, "5")
+continue_entry.pack(side=tk.LEFT)
+
 tk.Label(pause_frame, text="复读后暂停N:").pack(side=tk.LEFT)
 pause_entry = tk.Entry(pause_frame, width=5)
 pause_entry.insert(0, "5")
 pause_entry.pack(side=tk.LEFT)
+
+
+subtitle_text = tk.Text(root, width=400, height=5)  # 创建一个多行文本框
+subtitle_text.pack()
+
+# 调整播放开始时间
+adjust_begin = tk.Frame(root)
+adjust_begin.pack(pady=3)
+tk.Label(adjust_begin, text="调整播放开始时间:").pack(side=tk.LEFT)
+adjust_begin_slider = tk.Scale(
+    adjust_begin, from_=-0.5, to=+0.5, resolution=0.01, orient=tk.HORIZONTAL, length=200
+)
+adjust_begin_slider.pack(side=tk.LEFT)
+adjust_begin_slider.set(0.0)  # 默认 0 秒
+
+# 调整播放结束时间
+adjust_end = tk.Frame(root)
+adjust_end.pack(pady=3)
+tk.Label(adjust_end, text="调整播放结束时间:").pack(side=tk.LEFT)
+adjust_end_slider = tk.Scale(
+    adjust_end, from_=-0.5, to=+0.5, resolution=0.01, orient=tk.HORIZONTAL, length=200
+)
+adjust_end_slider.pack(side=tk.LEFT)
+adjust_end_slider.set(0.0)  # 默认 0 秒
 
 # 播放速度设置
 speed_frame = tk.Frame(root)
