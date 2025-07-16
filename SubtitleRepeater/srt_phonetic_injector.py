@@ -5,6 +5,7 @@ import json
 import shutil
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import filedialog
 
 # 切换工作目录到脚本所在目录
 script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
@@ -36,45 +37,54 @@ def get_pron_line(line):
     return re.sub(r"\b[a-zA-Z]+(?:['-][a-zA-Z]+)*\b", replace_word, line)
 
 
-# 遍历所有 .srt 文件
-for filename in os.listdir("."):
-    if filename.endswith(".srt"):
-        # 备份原始文件
-        backup_name = filename + ".bak"
-        shutil.copyfile(filename, backup_name)
-        print(f"🗂 已备份：{filename} → {backup_name}")
-
-        output_lines = []
-        with open(filename, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        i = 0
-        while i < len(lines):
-            output_lines.append(lines[i])  # index line or timestamp
-            if i + 1 < len(lines) and "-->" in lines[i]:
-                j = i + 1
-                while (
-                    j < len(lines)
-                    and lines[j].strip()
-                    and not re.match(r"^\d+$", lines[j])
-                ):
-                    text_line = lines[j]
-                    output_lines.append(text_line)
-                    pron_line = get_pron_line(text_line)
-                    if pron_line.strip():
-                        output_lines.append(pron_line)
-                    j += 1
-                i = j
-            else:
-                i += 1
-
-        # 覆盖原文件
-        with open(filename, "w", encoding="utf-8") as f:
-            f.writelines(output_lines)
-
-        print(f"✅ 处理完成并覆盖：{filename}")
-
-# 弹窗提示
+# 隐藏主窗口
 root = tk.Tk()
-root.withdraw()  # 隐藏主窗口
+root.withdraw()
+
+# 弹出目录选择对话框
+selected_dir = filedialog.askdirectory(title="请选择包含 .srt 文件的目录")
+
+if selected_dir:
+    for filename in os.listdir(selected_dir):
+        if filename.endswith(".srt"):
+            filepath = os.path.join(selected_dir, filename)
+
+            # 备份原始文件
+            backup_name = filepath + ".bak"
+            shutil.copyfile(filepath, backup_name)
+            print(f"🗂 已备份：{filename} → {backup_name}")
+
+            output_lines = []
+            with open(filepath, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            i = 0
+            while i < len(lines):
+                output_lines.append(lines[i])
+                if i + 1 < len(lines) and "-->" in lines[i]:
+                    j = i + 1
+                    while (
+                        j < len(lines)
+                        and lines[j].strip()
+                        and not re.match(r"^\d+$", lines[j])
+                    ):
+                        text_line = lines[j]
+                        output_lines.append(text_line)
+                        pron_line = get_pron_line(text_line)
+                        if pron_line.strip():
+                            output_lines.append(pron_line)
+                        j += 1
+                    i = j
+                else:
+                    i += 1
+
+            # 覆盖原文件
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.writelines(output_lines)
+
+            print(f"✅ 处理完成并覆盖：{filename}")
+else:
+    print("⚠️ 未选择目录，操作已取消。")
+
+
 messagebox.showinfo("处理完成", "🎉 所有字幕文件处理完成！")

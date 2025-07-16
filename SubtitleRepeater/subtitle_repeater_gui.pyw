@@ -6,12 +6,12 @@ import os
 import json
 import time
 import pysrt
-import webvtt
 import pysubs2
 import re
 import datetime
 import threading
 import keyboard  # 全局键盘监听
+from tkinter import font
 
 
 # === 原子变量类 ===
@@ -39,6 +39,26 @@ class AtomicInteger:
             return self._value
 
 
+def save_params(filepath, **kwargs):
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(kwargs, f, ensure_ascii=False, indent=2)
+
+
+def load_params(filepath, namespace=None):
+    if not os.path.exists(filepath):
+        print(f"⚠️ 文件不存在：{filepath}，返回空参数")
+        return {}
+    with open(filepath, "r", encoding="utf-8") as f:
+        params = json.load(f)
+
+    # 默认写入调用者的全局变量环境
+    if namespace is None:
+        namespace = globals()
+
+    for key, value in params.items():
+        namespace[key] = value
+
+
 # === 全局变量 ===
 MPV_SOCKET_PATH = rf"\\.\pipe\mpvsocket_{os.getpid()}"
 video_path = ""
@@ -48,6 +68,21 @@ g_current_index = AtomicInteger(0)
 paused = False
 close_mpv = False  # 用于控制 mpv 播放器的关闭
 
+f_current_index = 0
+f_show_subtitle = True
+f_fullscreen = False
+f_second_screen = False
+f_subtitle_offset = False
+f_repeat_entry = "5"
+f_repeat_intrval_entry = "5"
+f_continue_entry = "5"
+f_pause_entry = "5"
+f_speed_slider = 1.0
+
+load_params("params.json")
+
+g_current_index.set(f_current_index)  # 设置初始索引
+
 
 # === 自动查找字幕 ===
 def auto_find_subtitle():
@@ -55,7 +90,7 @@ def auto_find_subtitle():
     if not video_path:
         return
     base = os.path.splitext(video_path)[0]
-    for ext in [".ass", ".srt", ".vtt"]:
+    for ext in [".ass", ".srt"]:
         test_path = base + ext
         if os.path.exists(test_path):
             subtitle_path = test_path
@@ -99,19 +134,19 @@ def load_subtitles():
                 for sub in subs
             ]
 
-        elif subtitle_path.lower().endswith(".vtt"):
-            subs = webvtt.read(subtitle_path)
-            subtitles = []
-            for caption in subs:
-                h1, m1, s1 = caption.start.split(":")
-                s1, ms1 = s1.split(".")
-                start_sec = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
-                h2, m2, s2 = caption.end.split(":")
-                s2, ms2 = s2.split(".")
-                end_sec = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
-                subtitles.append(
-                    (start_sec, end_sec, caption.text.strip().replace("\n", " "))
-                )
+        #    elif subtitle_path.lower().endswith(".vtt"):
+        #    subs = webvtt.read(subtitle_path)
+        #    subtitles = []
+        #    for caption in subs:
+        #    h1, m1, s1 = caption.start.split(":")
+        #    s1, ms1 = s1.split(".")
+        #    start_sec = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
+        #    h2, m2, s2 = caption.end.split(":")
+        #    s2, ms2 = s2.split(".")
+        #    end_sec = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
+        #    subtitles.append(
+        #    (start_sec, end_sec, caption.text.strip().replace("\n", " "))
+        #    )
 
         else:
             messagebox.showerror("错误", "不支持的字幕格式！")
@@ -127,6 +162,12 @@ def load_subtitles():
         return []
 
 
+def update_video():
+    video_label.config(text=f"视频: {os.path.basename(video_path)}")
+    auto_find_subtitle()
+    update_progress_controls()
+
+
 # === 文件选择 ===
 def select_video():
     global video_path
@@ -135,16 +176,14 @@ def select_video():
     )
     if path:
         video_path = path
-        video_label.config(text=f"视频: {os.path.basename(path)}")
-        auto_find_subtitle()
         g_current_index.set(0)
-        update_progress_controls()
+        update_video()
 
 
 def select_subtitle():
     global subtitle_path
     path = filedialog.askopenfilename(
-        filetypes=[("字幕文件", "*.ass;*.srt;*.vtt"), ("所有文件", "*.*")]
+        filetypes=[("字幕文件", "*.ass;*.srt"), ("所有文件", "*.*")]
     )
     if path:
         subtitle_path = path
@@ -357,7 +396,7 @@ def seek_to(seconds):
             command = {"command": ["set_property", "time-pos", seconds]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
             print(f"seek_to success")
-            time.sleep(0.01)
+            time.sleep(0.1)
         return True
     except Exception as e:
         print(f"seek_to，通信错误:无法连接 mpv, {e}")
@@ -371,7 +410,7 @@ def pause_mpv():
             command = {"command": ["set_property", "pause", True]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
             print(f"pause_mpv success")
-            time.sleep(0.01)
+            time.sleep(0.1)
     except Exception as e:
         print(f"pause_mpv失败: {e}")
 
@@ -382,17 +421,20 @@ def resume_mpv():
             command = {"command": ["set_property", "pause", False]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
             print(f"resume_mpv success")
-            time.sleep(0.01)
+            time.sleep(0.1)
     except Exception as e:
-
         print(f"resume_mpv失败: {e}")
 
 
 def auto_repeat_all():
     speed = 1.0
+    playback_counts = 0
+    index = 0
     try:
         while True:
-            index = g_current_index.get()
+            if index != g_current_index.get():
+                index = g_current_index.get()
+                playback_counts = 0
             if index + 1 >= len(subtitles):
                 break
 
@@ -424,29 +466,26 @@ def auto_repeat_all():
             except:
                 continue_count = 0
 
-            try:
-                speedTmp = float(speed_slider.get())
-                if speedTmp != speed:
-                    speed = speedTmp
-                    if speed < 0.1:
-                        speed = 0.1
+            update_subtitle_window()
+            update_progress_controls()
+            Interrupted = False
+            left_continue_count = continue_count
+            for _ in range(repeat_count):
+                try:
+                    start_sec = subtitles[index][0] + adjust_begin_slider.get()
+                    end_sec = subtitles[index + 1][0] + adjust_end_slider.get()
+                except Exception as e:
+                    print(f"auto_repeat_all Exception: {e}")
 
+                if abs(speed_slider.get() - speed) > 1e-9 and speed_slider.get() > 0:
+                    speed = speed_slider.get()
                     try:
                         with open(MPV_SOCKET_PATH, "wb") as sock:
                             command = {"command": ["set_property", "speed", speed]}
                             sock.write((json.dumps(command) + "\n").encode("utf-8"))
                     except Exception as e:
                         print(f"设置播放速度失败: {e}")
-            except:
-                speed = 1.0
 
-            update_subtitle_window()
-            update_progress_controls()
-            Interrupted = False
-            for _ in range(repeat_count):
-
-                start_sec = subtitles[index][0] + adjust_begin_slider.get()
-                end_sec = subtitles[index + 1][0] + adjust_end_slider.get()
                 duration = (end_sec - start_sec) / speed
                 duration_speed = duration / speed
                 duration_half = duration / 2
@@ -454,28 +493,29 @@ def auto_repeat_all():
                 if not seek_to(start_sec):
                     print("auto_repeat_all exit")
                     return
+                playback_counts += 1
                 current_repeat_label.after(
                     0,
                     lambda: current_repeat_label.config(
-                        text="当前复读次数: " + str(_ + 1)
+                        text="当前复读次数: " + str(playback_counts)
                     ),
                 )
-
                 start_time = time.time()
                 while time.time() - start_time < duration_speed:
                     if g_current_index.get() != index or paused:
                         Interrupted = True
                         break
-                    time.sleep(0.01)
+                    # time.sleep(0.01)
                     continue
 
                 if Interrupted:
                     break
 
-                if continue_count > 0:
-                    continue_count -= 1
+                if left_continue_count > 1:
+                    left_continue_count -= 1
                     continue
                 elif repeat_intrval_sec > 0:
+                    left_continue_count = continue_count
                     pause_mpv()
                     if not seek_to(start_sec + duration_half):
                         print("auto_repeat_all exit")
@@ -488,19 +528,50 @@ def auto_repeat_all():
                         if g_current_index.get() != index or paused:
                             Interrupted = True
                             break
-                    resume_mpv()
+                    if not paused:
+                        resume_mpv()
 
             if Interrupted:
                 continue
 
             if delay_after_repeat > 0:
                 pause_mpv()
-                time.sleep(delay_after_repeat * duration / speed)
-                resume_mpv()
+                while elapsed < delay_after_repeat * duration_speed:
+                    time.sleep(0.1)
+                    # 可以在这里插入中断判断等逻辑，比如检查是否暂停/取消
+                    elapsed += 0.1
+                    if g_current_index.get() != index or paused:
+                        Interrupted = True
+                        break
+                if not paused:
+                    resume_mpv()
 
+            if Interrupted:
+                continue
             g_current_index.increment()
+            if subtitle_offset.get():
+                # 重置字幕偏移
+                adjust_begin_slider.set(0.0)
+                adjust_end_slider.set(0.0)
     except Exception as e:
         print(f"auto_repeat_all exit: {e}")
+    finally:
+        print("无论是否异常，这里都会执行（类似析构）")
+        save_params(
+            "params.json",  # 从 params.json 加载参数
+            video_path=video_path,
+            f_current_index=g_current_index.get(),
+            f_show_subtitle=show_subtitle.get(),
+            f_fullscreen=fullscreen.get(),
+            f_second_screen=second_screen.get(),
+            f_subtitle_offset=subtitle_offset.get(),
+            f_repeat_entry=repeat_entry.get(),
+            f_repeat_intrval_entry=repeat_intrval_entry.get(),
+            f_continue_entry=continue_entry.get(),
+            f_pause_entry=pause_entry.get(),
+            f_speed_slider=speed_slider.get(),
+        )
+        messagebox.showwarning("警告", "循环控制线程已经退出")
 
 
 # === 控件联动 ===
@@ -513,15 +584,24 @@ def on_slider_change(value):
 def on_prev():
     if g_current_index.get() > 0:
         g_current_index.decrement()
+        if subtitle_offset.get():
+            # 重置字幕偏移
+            adjust_begin_slider.set(0.0)
+            adjust_end_slider.set(0.0)
         update_progress_controls()
 
 
 def on_next():
     if g_current_index.get() < len(subtitles) - 1:
         g_current_index.increment()
+        if subtitle_offset.get():
+            # 重置字幕偏移
+            adjust_begin_slider.set(0.0)
+            adjust_end_slider.set(0.0)
         update_progress_controls()
 
 
+# 更新进度控件
 def update_progress_controls():
     if len(subtitles) == 0:
         return
@@ -529,12 +609,27 @@ def update_progress_controls():
     skip_slider.config(to=len(subtitles) - 1)
     skip_slider.set(index)
     current_index_label.config(text=str(index))
-    lines = subtitles[index][2].splitlines()
 
-    filtered_lines = [line for i, line in enumerate(lines) if i % 2 == 0]
-    new_text = "\n".join(filtered_lines)
     subtitle_text.delete("1.0", tk.END)
-    subtitle_text.insert(tk.END, new_text)
+    # Handle previous, current, and next subtitles
+    new_text = ""
+    for i in [index - 1, index, index + 1]:
+        if 0 <= i < len(subtitles):
+            new_text = (
+                "\n".join(
+                    [
+                        line
+                        for i, line in enumerate(subtitles[i][2].splitlines())
+                        if i % 2 == 0
+                    ]
+                )
+                + "\n"
+            )
+            if i == index:
+                subtitle_text.insert(tk.END, new_text, "bold")
+            else:
+                subtitle_text.insert(tk.END, new_text)
+
     update_count_label()
 
 
@@ -542,46 +637,43 @@ def update_count_label():
     count_label.config(text=f"/ {len(subtitles)}")
 
 
-def listen_global_key():
-    # 线程安全地更新 label
-    keyboard.add_hotkey("left", lambda: on_prev())
-    keyboard.add_hotkey("right", lambda: on_next())
-    keyboard.add_hotkey("space", lambda: toggle_pause())
-    keyboard.wait()  # 保持监听线程运行
-
-
-# 启动键盘监听线程
-threading.Thread(target=listen_global_key, daemon=True).start()
+def toggle_pause2():
+    toggle_pause()
+    toggle_pause()
 
 
 # === UI ===
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
-root.geometry("421x600+5+335")
+root.geometry("420x600+0+340")
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
 video_label.pack()
 
-tk.Button(root, text="选择字幕文件 (.ass ,.srt 或 .vtt)", command=select_subtitle).pack(
-    pady=5
-)
+tk.Button(root, text="选择字幕文件 (.ass ,.srt)", command=select_subtitle).pack(pady=5)
 subtitle_label = tk.Label(root, text="字幕: 未选择")
 subtitle_label.pack()
 
 options_frame = tk.Frame(root)
 options_frame.pack()
 
-show_subtitle = tk.BooleanVar(value=True)
+
+show_subtitle = tk.BooleanVar(value=f_show_subtitle)
 tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(
     side=tk.LEFT, padx=10
 )
 
-fullscreen = tk.BooleanVar(value=False)
+fullscreen = tk.BooleanVar(value=f_fullscreen)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
-second_screen = tk.BooleanVar(value=False)  # 默认在第二屏幕
+second_screen = tk.BooleanVar(value=f_second_screen)  # 默认在第二屏幕
 tk.Checkbutton(options_frame, text="在第二屏幕播放", variable=second_screen).pack(
+    side=tk.LEFT, padx=10
+)
+
+subtitle_offset = tk.BooleanVar(value=f_subtitle_offset)  # 默认在第二屏幕
+tk.Checkbutton(options_frame, text="重置字幕偏移", variable=subtitle_offset).pack(
     side=tk.LEFT, padx=10
 )
 
@@ -590,12 +682,12 @@ repeat_frame = tk.Frame(root)
 repeat_frame.pack(pady=3)
 tk.Label(repeat_frame, text="复读次数:").pack(side=tk.LEFT)
 repeat_entry = tk.Entry(repeat_frame, width=5)
-repeat_entry.insert(0, "5")
+repeat_entry.insert(0, f_repeat_entry)
 repeat_entry.pack(side=tk.LEFT)
 
 tk.Label(repeat_frame, text="复读间隔:").pack(side=tk.LEFT)
 repeat_intrval_entry = tk.Entry(repeat_frame, width=5)
-repeat_intrval_entry.insert(0, "5")
+repeat_intrval_entry.insert(0, f_repeat_intrval_entry)
 repeat_intrval_entry.pack(side=tk.LEFT)
 
 current_repeat_label = tk.Label(repeat_frame, text="当前复读次数: 0", width=20)
@@ -605,24 +697,29 @@ pause_frame = tk.Frame(root)
 pause_frame.pack(pady=3)
 tk.Label(pause_frame, text="连续复读次数:").pack(side=tk.LEFT)
 continue_entry = tk.Entry(pause_frame, width=5)
-continue_entry.insert(0, "5")
+continue_entry.insert(0, f_continue_entry)
 continue_entry.pack(side=tk.LEFT)
 
 tk.Label(pause_frame, text="复读后暂停N:").pack(side=tk.LEFT)
 pause_entry = tk.Entry(pause_frame, width=5)
-pause_entry.insert(0, "5")
+pause_entry.insert(0, f_pause_entry)
 pause_entry.pack(side=tk.LEFT)
 
-
-subtitle_text = tk.Text(root, width=400, height=5)  # 创建一个多行文本框
+# 多行文本框用于显示字幕
+subtitle_text = tk.Text(root, width=400, height=5, wrap="word")  # 创建一个多行文本框
 subtitle_text.pack()
+
+bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
+bold_font.configure(weight="bold")
+subtitle_text.tag_configure("bold", font=bold_font)
+
 
 # 调整播放开始时间
 adjust_begin = tk.Frame(root)
 adjust_begin.pack(pady=3)
 tk.Label(adjust_begin, text="调整播放开始时间:").pack(side=tk.LEFT)
 adjust_begin_slider = tk.Scale(
-    adjust_begin, from_=-0.5, to=+0.5, resolution=0.01, orient=tk.HORIZONTAL, length=200
+    adjust_begin, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
 )
 adjust_begin_slider.pack(side=tk.LEFT)
 adjust_begin_slider.set(0.0)  # 默认 0 秒
@@ -632,7 +729,7 @@ adjust_end = tk.Frame(root)
 adjust_end.pack(pady=3)
 tk.Label(adjust_end, text="调整播放结束时间:").pack(side=tk.LEFT)
 adjust_end_slider = tk.Scale(
-    adjust_end, from_=-0.5, to=+0.5, resolution=0.01, orient=tk.HORIZONTAL, length=200
+    adjust_end, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
 )
 adjust_end_slider.pack(side=tk.LEFT)
 adjust_end_slider.set(0.0)  # 默认 0 秒
@@ -645,7 +742,7 @@ tk.Label(speed_frame, text="播放速度:").pack(side=tk.LEFT)
 speed_slider = tk.Scale(
     speed_frame, from_=0.1, to=2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
 )
-speed_slider.set(1.0)  # 默认 1 倍速
+speed_slider.set(f_speed_slider)  # 默认 1 倍速
 speed_slider.pack(side=tk.LEFT)
 
 skip_slider = tk.Scale(
@@ -666,4 +763,53 @@ tk.Button(root, text="启动 mpv 播放器并开始复读", command=start_mpv).p
 toggle_button = tk.Button(root, text="暂停播放", command=toggle_pause)
 toggle_button.pack(pady=5)
 
+if os.path.exists(video_path):
+    update_video()  # 如果视频路径已存在，更新视频信息
+
+
+def listen_global_key():
+    # 线程安全地更新 label
+    keyboard.add_hotkey("left", lambda: on_prev())
+    keyboard.add_hotkey("right", lambda: on_next())
+    keyboard.add_hotkey("p", lambda: toggle_pause())
+    keyboard.add_hotkey("space", lambda: toggle_pause2())
+    keyboard.wait()  # 保持监听线程运行
+
+
+# 启动键盘监听线程
+# threading.Thread(target=listen_global_key, daemon=True).start()
+
+
+def listen_Focused_key(root):
+    root.bind("<Left>", lambda event: on_prev())
+    root.bind("<Right>", lambda event: on_next())
+    root.bind("<p>", lambda event: toggle_pause())
+    root.bind("<space>", lambda event: toggle_pause2())
+
+
+def on_focus_in(event):
+    print("Root window got focus!")
+    if subtitle_display_window:
+        subtitle_display_window.attributes("-topmost", True)
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = {"command": ["set_property", "ontop", True]}
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"设置全屏失败: {e}")
+
+    time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
+    if subtitle_display_window:
+        subtitle_display_window.attributes("-topmost", False)
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = {"command": ["set_property", "ontop", False]}
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"设置全屏失败: {e}")
+
+
+root.bind("<FocusIn>", on_focus_in)
+
+listen_Focused_key(root)
 root.mainloop()
