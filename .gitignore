@@ -4,3 +4,6 @@ SubtitleRepeater/Looping Countdown.spec
 SubtitleRepeater/subtitle_repeater_gui.spec
 SubtitleRepeater/looping_countdown.spec
 SubtitleRepeater/srt_phonetic_injector.spec
+SubtitleRepeater/tmp.txt
+params.json
+SubtitleRepeater/packet_exe.bat

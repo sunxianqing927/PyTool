@@ -362,8 +362,8 @@ def start_mpv():
             cmd.append("--geometry=0:-1080")  # 第二屏（上方）
             cmd.append(" --autofit-larger=100%x100% ")
         else:
-            cmd.append("--geometry=430:360")  # 设置位置
-            cmd.append("--autofit=1196x703")  # 设置大小（固定）
+            cmd.append("--geometry=433:360")  # 设置位置
+            cmd.append("--autofit=1196x670")  # 设置大小（固定）
 
         cmd.append(" --border=no ")
 
@@ -473,7 +473,12 @@ def auto_repeat_all():
             for _ in range(repeat_count):
                 try:
                     start_sec = subtitles[index][0] + adjust_begin_slider.get()
-                    end_sec = subtitles[index + 1][0] + adjust_end_slider.get()
+                    if playback_counts == 0 and index - 1 >= 0:
+                        start_sec = (
+                            subtitles[index - 1][1] + adjust_end_slider.get() + 0.1
+                        )
+
+                    end_sec = subtitles[index][1] + adjust_end_slider.get()
                 except Exception as e:
                     print(f"auto_repeat_all Exception: {e}")
 
@@ -486,7 +491,7 @@ def auto_repeat_all():
                     except Exception as e:
                         print(f"设置播放速度失败: {e}")
 
-                duration = (end_sec - start_sec) / speed
+                duration = end_sec - start_sec
                 duration_speed = duration / speed
                 duration_half = duration / 2
 
@@ -505,7 +510,7 @@ def auto_repeat_all():
                     if g_current_index.get() != index or paused:
                         Interrupted = True
                         break
-                    # time.sleep(0.01)
+                    time.sleep(0.01)
                     continue
 
                 if Interrupted:
@@ -530,10 +535,13 @@ def auto_repeat_all():
                             break
                     if not paused:
                         resume_mpv()
+                    if Interrupted:
+                        break
 
             if Interrupted:
                 continue
 
+            elapsed = 0
             if delay_after_repeat > 0:
                 pause_mpv()
                 while elapsed < delay_after_repeat * duration_speed:
@@ -626,9 +634,9 @@ def update_progress_controls():
                 + "\n"
             )
             if i == index:
-                subtitle_text.insert(tk.END, new_text, "bold")
+                subtitle_text.insert(tk.END, new_text, "center")
             else:
-                subtitle_text.insert(tk.END, new_text)
+                subtitle_text.insert(tk.END, new_text, "faded")
 
     update_count_label()
 
@@ -706,12 +714,19 @@ pause_entry.insert(0, f_pause_entry)
 pause_entry.pack(side=tk.LEFT)
 
 # 多行文本框用于显示字幕
-subtitle_text = tk.Text(root, width=400, height=5, wrap="word")  # 创建一个多行文本框
+subtitle_text = tk.Text(root, width=50, height=5, wrap="word", bg=root["bg"])
 subtitle_text.pack()
 
+# 字体设置
+base_font = font.Font(subtitle_text, subtitle_text.cget("font"))
 bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
 bold_font.configure(weight="bold")
-subtitle_text.tag_configure("bold", font=bold_font)
+
+# 中间行（主字幕）样式
+subtitle_text.tag_configure("center", font=bold_font)
+
+# 上下行（弱化字幕）样式
+subtitle_text.tag_configure("faded", font=base_font, foreground="#888888")
 
 
 # 调整播放开始时间
@@ -796,7 +811,7 @@ def on_focus_in(event):
             command = {"command": ["set_property", "ontop", True]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
     except Exception as e:
-        print(f"设置全屏失败: {e}")
+        print(f"on_focus_in True: {e}")
 
     time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
     if subtitle_display_window:
@@ -806,7 +821,7 @@ def on_focus_in(event):
             command = {"command": ["set_property", "ontop", False]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
     except Exception as e:
-        print(f"设置全屏失败: {e}")
+        print(f"on_focus_in False: {e}")
 
 
 root.bind("<FocusIn>", on_focus_in)
