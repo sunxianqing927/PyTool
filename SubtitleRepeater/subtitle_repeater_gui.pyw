@@ -655,9 +655,12 @@ def minimize_other(event=None):
     if event.widget != root:
         print("窗口最小化事件不是由根窗口触发的")
         return  # 确保是根窗口触发的事件
-    global subtitle_display_window
+    global subtitle_display_window, paused
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.wm_state("iconic")  # 最小化另一个窗口
+
+    paused = False  # 设置暂停状态
+    toggle_pause()  # 切换暂停状态
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -681,12 +684,21 @@ def restore_other(event=None):
     print("窗口还原")
 
 
+def on_close():
+    with open(MPV_SOCKET_PATH, "wb") as sock:
+        command = {"command": ["quit"]}
+        sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    root.destroy()
+
+
 # === UI ===
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
 root.geometry("420x600+0+340")
 root.bind("<Unmap>", minimize_other)  # 最小化时触发
 root.bind("<Map>", restore_other)
+
+root.protocol("WM_DELETE_WINDOW", on_close)
 
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
@@ -835,30 +847,6 @@ def listen_Focused_key(root):
     root.bind("<p>", lambda event: toggle_pause())
     root.bind("<space>", lambda event: toggle_pause2())
 
-
-def on_focus_in(event):
-    print("Root window got focus!")
-    if subtitle_display_window:
-        subtitle_display_window.attributes("-topmost", True)
-    try:
-        with open(MPV_SOCKET_PATH, "wb") as sock:
-            command = {"command": ["set_property", "ontop", True]}
-            sock.write((json.dumps(command) + "\n").encode("utf-8"))
-    except Exception as e:
-        print(f"on_focus_in True: {e}")
-
-    time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
-    if subtitle_display_window:
-        subtitle_display_window.attributes("-topmost", False)
-    try:
-        with open(MPV_SOCKET_PATH, "wb") as sock:
-            command = {"command": ["set_property", "ontop", False]}
-            sock.write((json.dumps(command) + "\n").encode("utf-8"))
-    except Exception as e:
-        print(f"on_focus_in False: {e}")
-
-
-# root.bind("<FocusIn>", on_focus_in)
 
 listen_Focused_key(root)
 root.mainloop()
