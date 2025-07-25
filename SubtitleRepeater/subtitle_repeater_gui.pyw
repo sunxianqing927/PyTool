@@ -12,6 +12,7 @@ import datetime
 import threading
 import keyboard  # 全局键盘监听
 from tkinter import font
+import pygetwindow as gw
 
 
 # === 原子变量类 ===
@@ -650,10 +651,43 @@ def toggle_pause2():
     toggle_pause()
 
 
+def minimize_other(event=None):
+    if event.widget != root:
+        print("窗口最小化事件不是由根窗口触发的")
+        return  # 确保是根窗口触发的事件
+    global subtitle_display_window
+    if subtitle_display_window and subtitle_display_window.winfo_exists():
+        subtitle_display_window.wm_state("iconic")  # 最小化另一个窗口
+
+    windows = gw.getWindowsWithTitle("mpv")
+    if windows:
+        mpv_window = windows[0]
+        mpv_window.minimize()
+    print("窗口最小化")
+
+
+def restore_other(event=None):
+    if event.widget != root:
+        print("窗口还原事件不是由根窗口触发的")
+        return  # 确保是根窗口触发的事件
+    global subtitle_display_window
+    if subtitle_display_window and subtitle_display_window.winfo_exists():
+        subtitle_display_window.wm_state("normal")
+
+    windows = gw.getWindowsWithTitle("mpv")
+    if windows:
+        mpv_window = windows[0]
+        mpv_window.restore()
+    print("窗口还原")
+
+
 # === UI ===
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
 root.geometry("420x600+0+340")
+root.bind("<Unmap>", minimize_other)  # 最小化时触发
+root.bind("<Map>", restore_other)
+
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
@@ -824,7 +858,7 @@ def on_focus_in(event):
         print(f"on_focus_in False: {e}")
 
 
-root.bind("<FocusIn>", on_focus_in)
+# root.bind("<FocusIn>", on_focus_in)
 
 listen_Focused_key(root)
 root.mainloop()
