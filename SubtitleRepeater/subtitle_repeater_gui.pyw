@@ -427,6 +427,23 @@ def resume_mpv():
         print(f"resume_mpv失败: {e}")
 
 
+def save_all_params():
+    save_params(
+        "params.json",  # 从 params.json 加载参数
+        video_path=video_path,
+        f_current_index=g_current_index.get(),
+        f_show_subtitle=show_subtitle.get(),
+        f_fullscreen=fullscreen.get(),
+        f_second_screen=second_screen.get(),
+        f_subtitle_offset=subtitle_offset.get(),
+        f_repeat_entry=repeat_entry.get(),
+        f_repeat_intrval_entry=repeat_intrval_entry.get(),
+        f_continue_entry=continue_entry.get(),
+        f_pause_entry=pause_entry.get(),
+        f_speed_slider=speed_slider.get(),
+    )
+
+
 def auto_repeat_all():
     speed = 1.0
     playback_counts = 0
@@ -566,20 +583,7 @@ def auto_repeat_all():
         print(f"auto_repeat_all exit: {e}")
     finally:
         print("无论是否异常，这里都会执行（类似析构）")
-        save_params(
-            "params.json",  # 从 params.json 加载参数
-            video_path=video_path,
-            f_current_index=g_current_index.get(),
-            f_show_subtitle=show_subtitle.get(),
-            f_fullscreen=fullscreen.get(),
-            f_second_screen=second_screen.get(),
-            f_subtitle_offset=subtitle_offset.get(),
-            f_repeat_entry=repeat_entry.get(),
-            f_repeat_intrval_entry=repeat_intrval_entry.get(),
-            f_continue_entry=continue_entry.get(),
-            f_pause_entry=pause_entry.get(),
-            f_speed_slider=speed_slider.get(),
-        )
+        save_all_params()
         messagebox.showwarning("警告", "循环控制线程已经退出")
 
 
@@ -685,10 +689,38 @@ def restore_other(event=None):
 
 
 def on_close():
-    with open(MPV_SOCKET_PATH, "wb") as sock:
-        command = {"command": ["quit"]}
-        sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = {"command": ["quit"]}
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"on_focus_in False: {e}")
+
+    save_all_params()
     root.destroy()
+    print("on_close called, parameters saved and root window closed.")
+
+
+def on_focus_in(event):
+    print("Root window got focus!")
+    if subtitle_display_window:
+        subtitle_display_window.attributes("-topmost", True)
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = {"command": ["set_property", "ontop", True]}
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"on_focus_in True: {e}")
+
+    time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
+    if subtitle_display_window:
+        subtitle_display_window.attributes("-topmost", False)
+    try:
+        with open(MPV_SOCKET_PATH, "wb") as sock:
+            command = {"command": ["set_property", "ontop", False]}
+            sock.write((json.dumps(command) + "\n").encode("utf-8"))
+    except Exception as e:
+        print(f"on_focus_in False: {e}")
 
 
 # === UI ===
@@ -697,6 +729,7 @@ root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
 root.geometry("420x600+0+340")
 root.bind("<Unmap>", minimize_other)  # 最小化时触发
 root.bind("<Map>", restore_other)
+root.bind("<FocusIn>", on_focus_in)
 
 root.protocol("WM_DELETE_WINDOW", on_close)
 
