@@ -73,7 +73,6 @@ close_mpv = False  # 用于控制 mpv 播放器的关闭
 f_current_index = 0
 f_show_subtitle = True
 f_fullscreen = False
-f_second_screen = False
 f_subtitle_offset = False
 f_repeat_entry = "5"
 f_repeat_intrval_entry = "5"
@@ -135,21 +134,6 @@ def load_subtitles():
                 )
                 for sub in subs
             ]
-
-        #    elif subtitle_path.lower().endswith(".vtt"):
-        #    subs = webvtt.read(subtitle_path)
-        #    subtitles = []
-        #    for caption in subs:
-        #    h1, m1, s1 = caption.start.split(":")
-        #    s1, ms1 = s1.split(".")
-        #    start_sec = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
-        #    h2, m2, s2 = caption.end.split(":")
-        #    s2, ms2 = s2.split(".")
-        #    end_sec = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
-        #    subtitles.append(
-        #    (start_sec, end_sec, caption.text.strip().replace("\n", " "))
-        #    )
-
         else:
             messagebox.showerror("错误", "不支持的字幕格式！")
             subtitles = []
@@ -203,11 +187,6 @@ def set_fullscreen(state=True):
         print(f"设置全屏失败: {e}")
 
 
-subtitle_display_window = None
-subtitle_display_window2 = None
-subtitle_labels = []
-
-
 # 将秒转为 SRT 时间格式
 def seconds_to_srt_timestamp(seconds: float) -> str:
     td = datetime.timedelta(seconds=seconds)
@@ -227,49 +206,9 @@ def get_notes_filename() -> str:
     return f"{base}_notes.srt"
 
 
-subtitle_text2 = None
-
-
-def on_close_subtitle_display_window2():
-    global subtitle_display_window2
-    subtitle_display_window2.destroy()
-    subtitle_display_window2 = None
-
-
-def show_subtitle_window2():
-    global subtitle_display_window2, subtitle_text2
-    if subtitle_display_window2:
-        return  # 避免重复创建
-    subtitle_display_window2 = tk.Toplevel(root)
-    subtitle_display_window2.title("字幕显示")
-    subtitle_display_window2.configure(bg="black")
-    subtitle_display_window2.geometry("290x1000+1620+0")
-    subtitle_display_window2.protocol(
-        "WM_DELETE_WINDOW", on_close_subtitle_display_window2
-    )
-
-    subtitle_display_window2.bind("<Left>", lambda event: on_prev())
-    subtitle_display_window2.bind("<Right>", lambda event: on_next())
-    subtitle_display_window2.bind("<space>", lambda event: toggle_pause2())
-
-    # 获取默认字体并修改大小
-    default_font = tkfont.nametofont("TkDefaultFont").copy()
-    default_font.configure(size=16)  # 修改字体大小 设置你想要的大小，比如 16
-
-    # 应用于 Text 控件
-    subtitle_text2 = tk.Text(
-        subtitle_display_window2, wrap="word", bg="#d3d3d3", font=default_font
-    )
-    subtitle_text2.pack(fill="both", expand=True)
-    # 字体设置
-    base_font = font.Font(subtitle_text2, subtitle_text2.cget("font"))
-    bold_font = font.Font(subtitle_text2, subtitle_text2.cget("font"))
-    bold_font.configure(weight="bold")
-
-    # 中间行（主字幕）样式
-    subtitle_text2.tag_configure("center", font=bold_font, foreground="#204080")
-    # 上下行（弱化字幕）样式
-    subtitle_text2.tag_configure("faded", font=bold_font)
+# === 字幕显示窗口 ===
+subtitle_display_window = None
+subtitle_text = None
 
 
 def on_close_subtitle_display_window():
@@ -279,57 +218,39 @@ def on_close_subtitle_display_window():
 
 
 def show_subtitle_window():
-    global subtitle_display_window, subtitle_labels
-    if subtitle_display_window and subtitle_display_window.winfo_exists():
+    global subtitle_display_window, subtitle_text
+    if subtitle_display_window:
         return  # 避免重复创建
-
     subtitle_display_window = tk.Toplevel(root)
     subtitle_display_window.title("字幕显示")
     subtitle_display_window.configure(bg="black")
-    subtitle_display_window.geometry("1620x300+0+0")
+    subtitle_display_window.geometry("470x1000+1450+0")
     subtitle_display_window.protocol(
         "WM_DELETE_WINDOW", on_close_subtitle_display_window
     )
 
-    subtitle_labels = []
-    for i in range(3):
-        lbl = tk.Label(
-            subtitle_display_window,
-            text="",
-            fg="white",
-            bg="black",
-            font=("Helvetica", 20),
-            wraplength=1600,
-            justify="center",
-            anchor="center",
-        )
-        lbl.pack(expand=True, fill=tk.BOTH)
-        subtitle_labels.append(lbl)
+    subtitle_display_window.bind("<Left>", lambda event: on_prev())
+    subtitle_display_window.bind("<Right>", lambda event: on_next())
+    subtitle_display_window.bind("<space>", lambda event: toggle_pause2())
 
-    update_subtitle_window()  # 初始显示
+    # 获取默认字体并修改大小
+    default_font = tkfont.nametofont("TkDefaultFont").copy()
+    default_font.configure(size=16)  # 修改字体大小 设置你想要的大小，比如 16
 
-
-def update_subtitle_window():
-    if not subtitle_labels or not subtitles or subtitle_display_window is None:
-        return
-    index = g_current_index.get()
-    prev_text = subtitles[index - 1][2] if index > 0 else ""
-    curr_text = subtitles[index][2]
-
-    lines = curr_text.splitlines()
-    odd_lines = [line for i, line in enumerate(lines) if i % 2 == 0]
-    even_lines = [f"[ {line} ]" for i, line in enumerate(lines) if i % 2 == 1]
-    odd_text = "\n".join(odd_lines)
-    even_text = "\n".join(even_lines)
-    curr_text = f"{odd_text}\n{even_text}"
-
-    next_text = subtitles[index + 1][2] if index + 1 < len(subtitles) else ""
-
-    subtitle_labels[0].config(text=prev_text, font=("Helvetica", 18), fg="#888888")
-    subtitle_labels[1].config(
-        text=curr_text, font=("Helvetica", 32, "bold"), fg="#C0A000"  # 金黄色
+    # 应用于 Text 控件
+    subtitle_text = tk.Text(
+        subtitle_display_window, wrap="word", bg="#d3d3d3", font=default_font
     )
-    subtitle_labels[2].config(text=next_text, font=("Helvetica", 18), fg="#888888")
+    subtitle_text.pack(fill="both", expand=True)
+    # 字体设置
+    base_font = font.Font(subtitle_text, subtitle_text.cget("font"))
+    bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
+    bold_font.configure(weight="bold")
+
+    # 中间行（主字幕）样式
+    subtitle_text.tag_configure("center", font=bold_font, foreground="#204080")
+    # 上下行（弱化字幕）样式
+    subtitle_text.tag_configure("faded", font=bold_font)
 
 
 # === 启动播放 ===
@@ -349,7 +270,6 @@ def start_mpv():
         if show_subtitle.get():
             if subtitle_path and os.path.exists(subtitle_path):
                 show_subtitle_window()
-                show_subtitle_window2()
                 cmd.append("--no-sub")
             #    cmd.append(f"--sub-file={subtitle_path}")
             #    print(f"加载字幕：{subtitle_path}")
@@ -359,14 +279,8 @@ def start_mpv():
             cmd.append("--no-sub")
             print("不加载字幕")
 
-        # 设置播放屏幕位置
-        if second_screen.get():
-            cmd.append("--geometry=0:-1080")  # 第二屏（上方）
-            cmd.append(" --autofit-larger=100%x100% ")
-        else:
-            cmd.append("--geometry=433:360")  # 设置位置
-            cmd.append("--autofit=1196x670")  # 设置大小（固定）
-
+        cmd.append("--geometry=0:0")  # 设置位置
+        cmd.append("--autofit=1450x1000")  # 设置大小（固定）
         cmd.append(" --border=no ")
 
         subprocess.Popen(cmd)
@@ -435,7 +349,6 @@ def save_all_params():
         f_current_index=g_current_index.get(),
         f_show_subtitle=show_subtitle.get(),
         f_fullscreen=fullscreen.get(),
-        f_second_screen=second_screen.get(),
         f_subtitle_offset=subtitle_offset.get(),
         f_repeat_entry=repeat_entry.get(),
         f_repeat_intrval_entry=repeat_intrval_entry.get(),
@@ -485,7 +398,6 @@ def auto_repeat_all():
             except:
                 continue_count = 0
 
-            update_subtitle_window()
             update_progress_controls()
             Interrupted = False
             left_continue_count = continue_count
@@ -617,8 +529,8 @@ def on_next():
 
 # 更新进度控件
 def update_subtitles_control():
-    global subtitle_display_window2
-    if len(subtitles) == 0 or subtitle_display_window2 is None:
+    global subtitle_display_window
+    if len(subtitles) == 0 or subtitle_display_window is None:
         return
 
     index = g_current_index.get()
@@ -626,7 +538,7 @@ def update_subtitles_control():
     # 计算起始行：找到当前 index 所在的 N 行区块的起始下标
     start = (index // N) * N
     end = min(start + N, len(subtitles))
-    subtitle_text2.delete("1.0", tk.END)
+    subtitle_text.delete("1.0", tk.END)
     for i in range(start, end):
         lines = [
             line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0
@@ -634,11 +546,11 @@ def update_subtitles_control():
         text = "\n".join(lines) + "\n"
 
         if i == index:
-            subtitle_text2.insert(tk.END, text, "center")
+            subtitle_text.insert(tk.END, text, "center")
         else:
-            subtitle_text2.insert(tk.END, text, "faded")
+            subtitle_text.insert(tk.END, text, "faded")
 
-    subtitle_text2.insert(tk.END, "\n", "faded")
+    subtitle_text.insert(tk.END, "\n", "faded")
 
     for i in range(start, end):
         lines = [
@@ -647,9 +559,9 @@ def update_subtitles_control():
         text = "\n".join(lines) + "\n"
 
         if i == index:
-            subtitle_text2.insert(tk.END, text, "center")
+            subtitle_text.insert(tk.END, text, "center")
         else:
-            subtitle_text2.insert(tk.END, text, "faded")
+            subtitle_text.insert(tk.END, text, "faded")
 
 
 # 更新进度控件
@@ -660,27 +572,6 @@ def update_progress_controls():
     skip_slider.config(to=len(subtitles) - 1)
     skip_slider.set(index)
     current_index_label.config(text=str(index))
-
-    subtitle_text.delete("1.0", tk.END)
-    # Handle previous, current, and next subtitles
-    new_text = ""
-    for i in [index - 1, index, index + 1]:
-        if 0 <= i < len(subtitles):
-            new_text = (
-                "\n".join(
-                    [
-                        line
-                        for i, line in enumerate(subtitles[i][2].splitlines())
-                        if i % 2 == 0
-                    ]
-                )
-                + "\n"
-            )
-            if i == index:
-                subtitle_text.insert(tk.END, new_text, "center")
-            else:
-                subtitle_text.insert(tk.END, new_text, "faded")
-
     update_count_label()
     update_subtitles_control()
 
@@ -697,11 +588,9 @@ def toggle_pause2():
 def minimize_other(event=None):
     if event.widget != root:
         return  # 确保是根窗口触发的事件
-    global subtitle_display_window, paused, subtitle_display_window2
+    global paused, subtitle_display_window
     if subtitle_display_window and subtitle_display_window.winfo_exists():
-        subtitle_display_window.wm_state("iconic")  # 最小化另一个窗口
-    if subtitle_display_window2 and subtitle_display_window2.winfo_exists():
-        subtitle_display_window2.wm_state("iconic")
+        subtitle_display_window.wm_state("iconic")
 
     paused = False  # 设置暂停状态
     toggle_pause()  # 切换暂停状态
@@ -717,12 +606,12 @@ def restore_other(event=None):
     if event.widget != root:
         return  # 确保是根窗口触发的事件
 
-    global subtitle_display_window, subtitle_display_window2
+    global subtitle_display_window
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.wm_state("normal")
 
-    if subtitle_display_window2 and subtitle_display_window2.winfo_exists():
-        subtitle_display_window2.wm_state("normal")
+    paused = True  # 设置播放状态
+    toggle_pause()
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -746,12 +635,9 @@ def on_close():
 
 def on_focus_in(event):
     print("Root window got focus!")
-    global subtitle_display_window, subtitle_display_window2
+    global subtitle_display_window
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.attributes("-topmost", True)
-
-    if subtitle_display_window2 and subtitle_display_window2.winfo_exists():
-        subtitle_display_window2.attributes("-topmost", True)
 
     try:
         with open(MPV_SOCKET_PATH, "wb") as sock:
@@ -763,9 +649,6 @@ def on_focus_in(event):
     time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.attributes("-topmost", False)
-
-    if subtitle_display_window2 and subtitle_display_window2.winfo_exists():
-        subtitle_display_window2.attributes("-topmost", False)
     try:
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "ontop", False]}
@@ -777,7 +660,7 @@ def on_focus_in(event):
 # === UI ===
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
-root.geometry("420x600+0+340")
+root.geometry("470x600+1450+340")
 root.bind("<Unmap>", minimize_other)  # 最小化时触发
 root.bind("<Map>", restore_other)
 root.bind("<FocusIn>", on_focus_in)
@@ -805,16 +688,10 @@ tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(
 fullscreen = tk.BooleanVar(value=f_fullscreen)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
-second_screen = tk.BooleanVar(value=f_second_screen)  # 默认在第二屏幕
-tk.Checkbutton(options_frame, text="在第二屏幕播放", variable=second_screen).pack(
-    side=tk.LEFT, padx=10
-)
-
 subtitle_offset = tk.BooleanVar(value=f_subtitle_offset)  # 默认在第二屏幕
 tk.Checkbutton(options_frame, text="重置字幕偏移", variable=subtitle_offset).pack(
     side=tk.LEFT, padx=10
 )
-
 
 repeat_frame = tk.Frame(root)
 repeat_frame.pack(pady=3)
@@ -842,22 +719,6 @@ tk.Label(pause_frame, text="复读后暂停N:").pack(side=tk.LEFT)
 pause_entry = tk.Entry(pause_frame, width=5)
 pause_entry.insert(0, f_pause_entry)
 pause_entry.pack(side=tk.LEFT)
-
-# 多行文本框用于显示字幕
-subtitle_text = tk.Text(root, width=50, height=5, wrap="word", bg=root["bg"])
-subtitle_text.pack()
-
-# 字体设置
-base_font = font.Font(subtitle_text, subtitle_text.cget("font"))
-bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
-bold_font.configure(weight="bold")
-
-# 中间行（主字幕）样式
-subtitle_text.tag_configure("center", font=bold_font)
-
-# 上下行（弱化字幕）样式
-subtitle_text.tag_configure("faded", font=base_font, foreground="#888888")
-
 
 # 调整播放开始时间
 adjust_begin = tk.Frame(root)
@@ -948,8 +809,6 @@ def display_on_top():
 
 root.bind("<Left>", lambda event: on_prev())
 root.bind("<Right>", lambda event: on_next())
-root.bind("<p>", lambda event: toggle_pause())
-root.bind("<P>", lambda event: toggle_pause())
 root.bind("<space>", lambda event: toggle_pause2())
 
 keyboard.add_hotkey("ctrl+d", lambda: toggle_window_state())
