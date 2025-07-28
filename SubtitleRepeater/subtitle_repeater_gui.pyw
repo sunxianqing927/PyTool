@@ -696,7 +696,6 @@ def toggle_pause2():
 
 def minimize_other(event=None):
     if event.widget != root:
-        print("窗口最小化事件不是由根窗口触发的")
         return  # 确保是根窗口触发的事件
     global subtitle_display_window, paused, subtitle_display_window2
     if subtitle_display_window and subtitle_display_window.winfo_exists():
@@ -716,8 +715,8 @@ def minimize_other(event=None):
 
 def restore_other(event=None):
     if event.widget != root:
-        print("窗口还原事件不是由根窗口触发的")
         return  # 确保是根窗口触发的事件
+
     global subtitle_display_window, subtitle_display_window2
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.wm_state("normal")
@@ -913,27 +912,47 @@ if os.path.exists(video_path):
     update_video()  # 如果视频路径已存在，更新视频信息
 
 
-def listen_global_key():
-    # 线程安全地更新 label
-    keyboard.add_hotkey("left", lambda: on_prev())
-    keyboard.add_hotkey("right", lambda: on_next())
-    keyboard.add_hotkey("p", lambda: toggle_pause())
-    keyboard.add_hotkey("space", lambda: toggle_pause2())
-    keyboard.wait()  # 保持监听线程运行
+def toggle_window_state():
+    if keyboard.is_pressed("ctrl") and keyboard.is_pressed("d"):
+        print("真正触发了 ctrl+d")
+        if root.state() == "normal":
+            root.iconify()  # 最小化
+        elif root.state() == "iconic":
+            root.deiconify()  # 还原
+            root.attributes("-topmost", True)  # 设置根窗口为最上层
+            time.sleep(0.1)
+            root.attributes("-topmost", False)
+    else:
+        print("没有触发 ctrl+d")
 
 
-# 启动键盘监听线程
-# threading.Thread(target=listen_global_key, daemon=True).start()
+def display_on_top():
+    if keyboard.is_pressed("ctrl") and keyboard.is_pressed("f"):
+        print("真正触发了 ctrl+f")
+        try:
+            if root.state() == "iconic":
+                root.deiconify()  # 确保窗口可见
+                return
+
+            on_focus_in(None)
+        except Exception as e:
+            print(f"设置最上层失败: {e}")
+        finally:
+            root.attributes("-topmost", True)  # 设置根窗口为最上层
+            time.sleep(0.1)
+            root.attributes("-topmost", False)
+
+    else:
+        print("真正触发了 ctrl+f")
 
 
-def listen_Focused_key(root):
-    global subtitle_display_window2
-    root.bind("<Left>", lambda event: on_prev())
-    root.bind("<Right>", lambda event: on_next())
-    root.bind("<p>", lambda event: toggle_pause())
-    root.bind("<P>", lambda event: toggle_pause())
-    root.bind("<space>", lambda event: toggle_pause2())
+root.bind("<Left>", lambda event: on_prev())
+root.bind("<Right>", lambda event: on_next())
+root.bind("<p>", lambda event: toggle_pause())
+root.bind("<P>", lambda event: toggle_pause())
+root.bind("<space>", lambda event: toggle_pause2())
 
+keyboard.add_hotkey("ctrl+d", lambda: toggle_window_state())
+keyboard.add_hotkey("ctrl+f", lambda: display_on_top())
 
-listen_Focused_key(root)
 root.mainloop()
