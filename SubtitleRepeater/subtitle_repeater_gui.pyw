@@ -227,28 +227,6 @@ def get_notes_filename() -> str:
     return f"{base}_notes.srt"
 
 
-# 获取 SRT 文件中下一个字幕编号
-def get_next_srt_number(filename: str) -> int:
-    """根据最后一个时间戳行，获取它的上一行作为编号，返回下一个字幕编号"""
-    if not os.path.exists(filename):
-        return 1
-
-    with open(filename, "r", encoding="utf-8") as f:
-        lines = f.read().splitlines()
-
-    timestamp_pattern = re.compile(
-        r"\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}"
-    )
-
-    for i in range(len(lines) - 1, 0, -1):
-        if timestamp_pattern.match(lines[i]):
-            try:
-                return int(lines[i - 1]) + 1
-            except:
-                break
-    return 1
-
-
 subtitle_text2 = None
 
 
@@ -265,17 +243,22 @@ def show_subtitle_window2():
     subtitle_display_window2 = tk.Toplevel(root)
     subtitle_display_window2.title("字幕显示")
     subtitle_display_window2.configure(bg="black")
-    subtitle_display_window2.geometry("300x670+1620+340")
+    subtitle_display_window2.geometry("290x1000+1620+0")
     subtitle_display_window2.protocol(
         "WM_DELETE_WINDOW", on_close_subtitle_display_window2
     )
+
+    subtitle_display_window2.bind("<Left>", lambda event: on_prev())
+    subtitle_display_window2.bind("<Right>", lambda event: on_next())
+    subtitle_display_window2.bind("<space>", lambda event: toggle_pause2())
+
     # 获取默认字体并修改大小
     default_font = tkfont.nametofont("TkDefaultFont").copy()
     default_font.configure(size=16)  # 修改字体大小 设置你想要的大小，比如 16
 
     # 应用于 Text 控件
     subtitle_text2 = tk.Text(
-        subtitle_display_window2, wrap="word", bg=root["bg"], font=default_font
+        subtitle_display_window2, wrap="word", bg="#d3d3d3", font=default_font
     )
     subtitle_text2.pack(fill="both", expand=True)
     # 字体设置
@@ -303,7 +286,7 @@ def show_subtitle_window():
     subtitle_display_window = tk.Toplevel(root)
     subtitle_display_window.title("字幕显示")
     subtitle_display_window.configure(bg="black")
-    subtitle_display_window.geometry("1920x300+0+0")
+    subtitle_display_window.geometry("1620x300+0+0")
     subtitle_display_window.protocol(
         "WM_DELETE_WINDOW", on_close_subtitle_display_window
     )
@@ -327,7 +310,7 @@ def show_subtitle_window():
 
 
 def update_subtitle_window():
-    if not subtitle_labels or not subtitles:
+    if not subtitle_labels or not subtitles or subtitle_display_window is None:
         return
     index = g_current_index.get()
     prev_text = subtitles[index - 1][2] if index > 0 else ""
@@ -634,8 +617,8 @@ def on_next():
 
 # 更新进度控件
 def update_subtitles_control():
-    global subtitle_text2
-    if len(subtitles) == 0 or subtitle_text2 is None:
+    global subtitle_display_window2
+    if len(subtitles) == 0 or subtitle_display_window2 is None:
         return
 
     index = g_current_index.get()
@@ -944,6 +927,7 @@ def listen_global_key():
 
 
 def listen_Focused_key(root):
+    global subtitle_display_window2
     root.bind("<Left>", lambda event: on_prev())
     root.bind("<Right>", lambda event: on_next())
     root.bind("<p>", lambda event: toggle_pause())
