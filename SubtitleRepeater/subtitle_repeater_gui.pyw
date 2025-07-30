@@ -187,9 +187,7 @@ def select_video():
 
 def select_subtitle():
     global subtitle_path
-    path = filedialog.askopenfilename(
-        filetypes=[("字幕文件", "*.ass;*.srt"), ("所有文件", "*.*")]
-    )
+    path = filedialog.askopenfilename(filetypes=[("字幕文件", "*.ass;*.srt"), ("所有文件", "*.*")])
     if path:
         subtitle_path = path
         subtitle_label.config(text=f"字幕: {os.path.basename(path)}")
@@ -244,9 +242,7 @@ def show_subtitle_window():
     subtitle_display_window.title("字幕显示")
     subtitle_display_window.configure(bg="black")
     subtitle_display_window.geometry("470x1000+1450+0")
-    subtitle_display_window.protocol(
-        "WM_DELETE_WINDOW", on_close_subtitle_display_window
-    )
+    subtitle_display_window.protocol("WM_DELETE_WINDOW", on_close_subtitle_display_window)
 
     subtitle_display_window.bind("<Left>", lambda event: on_prev())
     subtitle_display_window.bind("<Right>", lambda event: on_next())
@@ -257,9 +253,7 @@ def show_subtitle_window():
     default_font.configure(size=16)  # 修改字体大小 设置你想要的大小，比如 16
 
     # 应用于 Text 控件
-    subtitle_text = tk.Text(
-        subtitle_display_window, wrap="word", bg="#d3d3d3", font=default_font
-    )
+    subtitle_text = tk.Text(subtitle_display_window, wrap="word", bg="#d3d3d3", font=default_font)
     subtitle_text.pack(fill="both", expand=True)
     # 字体设置
     bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
@@ -426,9 +420,7 @@ def auto_repeat_all():
                 try:
                     start_sec = subtitles[index][0] + adjust_begin_slider.get()
                     if playback_counts == 0 and index - 1 >= 0:
-                        start_sec = (
-                            subtitles[index - 1][1] + adjust_end_slider.get() + 0.1
-                        )
+                        start_sec = subtitles[index - 1][1] + adjust_end_slider.get() + 0.1
 
                     end_sec = subtitles[index][1] + adjust_end_slider.get()
                 except Exception as e:
@@ -444,6 +436,10 @@ def auto_repeat_all():
                         print(f"设置播放速度失败: {e}")
 
                 duration = end_sec - start_sec
+                if duration <= 0.1:
+                    start_sec = max(start_sec - 0.15, 0)
+                    end_sec = end_sec + 0.15
+                    duration = end_sec - start_sec
                 duration_speed = duration / speed
                 duration_half = duration / 2
 
@@ -569,9 +565,7 @@ def update_subtitles_control():
     subtitle_text.insert(tk.END, f"{index}/{len(subtitles)}\n", "faded")
 
     for i in range(start, end):
-        lines = [
-            line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0
-        ]
+        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
         text = "\n".join(lines) + "\n"
 
         if i == index:
@@ -582,9 +576,7 @@ def update_subtitles_control():
     subtitle_text.insert(tk.END, "\n", "faded")
 
     for i in range(start, end):
-        lines = [
-            line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 1
-        ]
+        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 1]
         text = "\n".join(lines) + "\n"
 
         if i == index:
@@ -599,6 +591,20 @@ def update_subtitles_control():
         end_next = min(end + N, len(subtitles))
         for i in range(start_pre, end_next):
             lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+            text = "\n".join(lines) + "\n"
+            if i == start:
+                subtitle_text.insert(tk.END, "\n///\n", "faded")
+            elif i == end - 1:
+                subtitle_text.insert(tk.END, "///\n\n", "faded")
+
+            if i == index:
+                subtitle_text.insert(tk.END, text, "center")
+            else:
+                subtitle_text.insert(tk.END, text, "faded")
+
+        subtitle_text.insert(tk.END, "\n///\n", "faded")
+        for i in range(start_pre, end_next):
+            lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
             text = "\n".join(lines) + "\n"
             if i == start:
                 subtitle_text.insert(tk.END, "\n///\n", "faded")
@@ -732,9 +738,7 @@ options_frame.pack()
 
 
 show_subtitle = tk.BooleanVar(value=f_show_subtitle)
-tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(
-    side=tk.LEFT, padx=10
-)
+tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(side=tk.LEFT, padx=10)
 
 fullscreen = tk.BooleanVar(value=f_fullscreen)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
@@ -830,6 +834,13 @@ if os.path.exists(video_path):
     update_video()  # 如果视频路径已存在，更新视频信息
 
 
+def set_root_on_focus_without_event():
+    callback = root.bind("<FocusIn>")
+    root.unbind("<FocusIn>")
+    root.focus_force()
+    root.bind("<FocusIn>", callback)
+
+
 def toggle_window_state():
     if keyboard.is_pressed("ctrl") and keyboard.is_pressed("d"):
         print("真正触发了 ctrl+d")
@@ -840,6 +851,7 @@ def toggle_window_state():
             root.attributes("-topmost", True)  # 设置根窗口为最上层
             time.sleep(0.1)
             root.attributes("-topmost", False)
+        set_root_on_focus_without_event()
     else:
         print("没有触发 ctrl+d")
 
@@ -859,7 +871,7 @@ def display_on_top():
             root.attributes("-topmost", True)  # 设置根窗口为最上层
             time.sleep(0.1)
             root.attributes("-topmost", False)
-
+            set_root_on_focus_without_event()
     else:
         print("真正触发了 ctrl+f")
 
