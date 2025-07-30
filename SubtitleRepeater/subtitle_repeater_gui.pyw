@@ -66,6 +66,8 @@ MPV_SOCKET_PATH = rf"\\.\pipe\mpvsocket_{os.getpid()}"
 video_path = ""
 subtitle_path = ""
 subtitles = []
+subtitles_ch = []
+running = False  # 控制 mpv 播放器的运行状态
 g_current_index = AtomicInteger(0)
 paused = False
 close_mpv = False  # 用于控制 mpv 播放器的关闭
@@ -78,6 +80,7 @@ f_repeat_entry = "5"
 f_repeat_intrval_entry = "5"
 f_continue_entry = "5"
 f_pause_entry = "5"
+f_subtitles_entry = "10"
 f_speed_slider = 1.0
 
 load_params("params.json")
@@ -106,7 +109,7 @@ def auto_find_subtitle():
 
 # === 加载字幕 ===
 def load_subtitles():
-    global subtitles
+    global subtitles, subtitles_ch
     if not os.path.exists(subtitle_path):
         messagebox.showerror("错误", "字幕文件未找到！")
         return []
@@ -134,6 +137,22 @@ def load_subtitles():
                 )
                 for sub in subs
             ]
+
+            subtitles_ch = None
+            new_path = subtitle_path[:-4] + ".txt"  # 去掉最后的 .str 再拼接
+            if os.path.exists(new_path):
+                subs = pysrt.open(new_path)
+                subtitles_ch = [
+                    (
+                        sub.start.ordinal / 1000,
+                        sub.end.ordinal / 1000,
+                        sub.text.strip(),
+                    )
+                    for sub in subs
+                ]
+
+                if len(subtitles_ch) != len(subtitles):
+                    subtitles_ch = None
         else:
             messagebox.showerror("错误", "不支持的字幕格式！")
             subtitles = []
@@ -243,7 +262,6 @@ def show_subtitle_window():
     )
     subtitle_text.pack(fill="both", expand=True)
     # 字体设置
-    base_font = font.Font(subtitle_text, subtitle_text.cget("font"))
     bold_font = font.Font(subtitle_text, subtitle_text.cget("font"))
     bold_font.configure(weight="bold")
 
@@ -354,14 +372,17 @@ def save_all_params():
         f_repeat_intrval_entry=repeat_intrval_entry.get(),
         f_continue_entry=continue_entry.get(),
         f_pause_entry=pause_entry.get(),
+        f_subtitles_entry=subtitles_entry.get(),
         f_speed_slider=speed_slider.get(),
     )
 
 
 def auto_repeat_all():
+    global running
     speed = 1.0
     playback_counts = 0
     index = 0
+    running = True  # 控制循环的运行状态
     try:
         while True:
             if index != g_current_index.get():
@@ -385,7 +406,7 @@ def auto_repeat_all():
                 repeat_intrval_sec = 0
 
             try:
-                delay_after_repeat = float(pause_entry.get())
+                delay_after_repeat = int(pause_entry.get())
                 if delay_after_repeat < 0:
                     delay_after_repeat = 0
             except:
@@ -496,6 +517,7 @@ def auto_repeat_all():
         print(f"auto_repeat_all exit: {e}")
     finally:
         print("无论是否异常，这里都会执行（类似析构）")
+        running = False  # 停止循环
         save_all_params()
         messagebox.showwarning("警告", "循环控制线程已经退出")
 
@@ -535,10 +557,17 @@ def update_subtitles_control():
 
     index = g_current_index.get()
     N = 10  # 每页显示 N 行字幕
+    try:
+        N = int(subtitles_entry.get())
+        subtitle_text.delete("1.0", tk.END)
+    except Exception as e:
+        print(f"subtitles_entry失败: {e}")
     # 计算起始行：找到当前 index 所在的 N 行区块的起始下标
     start = (index // N) * N
     end = min(start + N, len(subtitles))
     subtitle_text.delete("1.0", tk.END)
+    subtitle_text.insert(tk.END, f"{index}/{len(subtitles)}\n", "faded")
+
     for i in range(start, end):
         lines = [
             line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0
@@ -562,6 +591,26 @@ def update_subtitles_control():
             subtitle_text.insert(tk.END, text, "center")
         else:
             subtitle_text.insert(tk.END, text, "faded")
+
+    if subtitles_ch is not None:
+        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
+        subtitle_text.insert(tk.END, "中文翻译:\n", "faded")
+        start_pre = max(0, start - N)
+        end_next = min(end + N, len(subtitles))
+        for i in range(start_pre, end_next):
+            lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+            text = "\n".join(lines) + "\n"
+            if i == start:
+                subtitle_text.insert(tk.END, "\n///\n", "faded")
+            elif i == end - 1:
+                subtitle_text.insert(tk.END, "///\n\n", "faded")
+
+            if i == index:
+                subtitle_text.insert(tk.END, text, "center")
+            else:
+                subtitle_text.insert(tk.END, text, "faded")
+
+        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
 
 
 # 更新进度控件
@@ -588,12 +637,13 @@ def toggle_pause2():
 def minimize_other(event=None):
     if event.widget != root:
         return  # 确保是根窗口触发的事件
-    global paused, subtitle_display_window
+    global paused, subtitle_display_window, running, paused
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.wm_state("iconic")
 
-    paused = False  # 设置暂停状态
-    toggle_pause()  # 切换暂停状态
+    if running:
+        paused = False  # 设置暂停状态
+        toggle_pause()  # 切换暂停状态
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -606,12 +656,13 @@ def restore_other(event=None):
     if event.widget != root:
         return  # 确保是根窗口触发的事件
 
-    global subtitle_display_window
+    global subtitle_display_window, running, paused
     if subtitle_display_window and subtitle_display_window.winfo_exists():
         subtitle_display_window.wm_state("normal")
 
-    paused = True  # 设置播放状态
-    toggle_pause()
+    if running:
+        paused = True  # 设置播放状态
+        toggle_pause()
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -715,10 +766,16 @@ continue_entry = tk.Entry(pause_frame, width=5)
 continue_entry.insert(0, f_continue_entry)
 continue_entry.pack(side=tk.LEFT)
 
-tk.Label(pause_frame, text="复读后暂停N:").pack(side=tk.LEFT)
+tk.Label(pause_frame, text="复读后暂停:").pack(side=tk.LEFT)
 pause_entry = tk.Entry(pause_frame, width=5)
 pause_entry.insert(0, f_pause_entry)
 pause_entry.pack(side=tk.LEFT)
+
+
+tk.Label(pause_frame, text="显示字幕行数:").pack(side=tk.LEFT)
+subtitles_entry = tk.Entry(pause_frame, width=5)
+subtitles_entry.insert(0, f_subtitles_entry)
+subtitles_entry.pack(side=tk.LEFT)
 
 # 调整播放开始时间
 adjust_begin = tk.Frame(root)
