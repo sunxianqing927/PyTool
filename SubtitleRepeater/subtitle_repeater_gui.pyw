@@ -76,6 +76,7 @@ f_current_index = 0
 f_show_subtitle = True
 f_fullscreen = False
 f_subtitle_offset = False
+f_subtitle_ch_first = False
 f_repeat_entry = "5"
 f_repeat_intrval_entry = "5"
 f_continue_entry = "5"
@@ -245,7 +246,9 @@ def show_subtitle_window():
     subtitle_display_window.protocol("WM_DELETE_WINDOW", on_close_subtitle_display_window)
 
     subtitle_display_window.bind("<Left>", lambda event: on_prev())
+    subtitle_display_window.bind("<Control-Left>", lambda event: on_prev(True))
     subtitle_display_window.bind("<Right>", lambda event: on_next())
+    subtitle_display_window.bind("<Control-Right>", lambda event: on_next(True))
     subtitle_display_window.bind("<space>", lambda event: toggle_pause2())
 
     # 获取默认字体并修改大小
@@ -362,6 +365,7 @@ def save_all_params():
         f_show_subtitle=show_subtitle.get(),
         f_fullscreen=fullscreen.get(),
         f_subtitle_offset=subtitle_offset.get(),
+        f_subtitle_ch_first=subtitle_ch_first.get(),
         f_repeat_entry=repeat_entry.get(),
         f_repeat_intrval_entry=repeat_intrval_entry.get(),
         f_continue_entry=continue_entry.get(),
@@ -525,9 +529,15 @@ def on_slider_change(value):
     update_count_label()
 
 
-def on_prev():
-    if g_current_index.get() > 0:
-        g_current_index.decrement()
+def on_prev(bPage=False):
+    num = 1
+    if bPage:
+        try:
+            num = int(subtitles_entry.get())
+        except ValueError:
+            num = 1
+    if g_current_index.get() - num > 0:
+        g_current_index.set(g_current_index.get() - num)
         if subtitle_offset.get():
             # 重置字幕偏移
             adjust_begin_slider.set(0.0)
@@ -535,14 +545,94 @@ def on_prev():
         update_progress_controls()
 
 
-def on_next():
-    if g_current_index.get() < len(subtitles) - 1:
-        g_current_index.increment()
+def on_next(bPage=False):
+    num = 1
+    if bPage:
+        try:
+            num = int(subtitles_entry.get())
+        except ValueError:
+            num = 1
+    if g_current_index.get() + num < len(subtitles) - 1:
+        g_current_index.set(g_current_index.get() + num)
         if subtitle_offset.get():
             # 重置字幕偏移
             adjust_begin_slider.set(0.0)
             adjust_end_slider.set(0.0)
         update_progress_controls()
+
+
+def update_main_subtitles(start, end, index):
+    for i in range(start, end):
+        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
+        text = "\n".join(lines) + "\n"
+
+        if i == index:
+            subtitle_text.insert(tk.END, text, "center")
+        else:
+            subtitle_text.insert(tk.END, text, "faded")
+
+    subtitle_text.insert(tk.END, "\n", "faded")
+
+    for i in range(start, end):
+        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 1]
+        text = "\n".join(lines) + "\n"
+
+        if i == index:
+            subtitle_text.insert(tk.END, text, "center")
+        else:
+            subtitle_text.insert(tk.END, text, "faded")
+
+
+def update_chinese_subtitles(start, end, index):
+    if subtitles_ch is None:
+        return  # 如果没有中文字幕，直接返回
+
+    for i in range(start, end):
+        lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+        text = "\n".join(lines) + "\n"
+
+        if i == index:
+            subtitle_text.insert(tk.END, text, "center")
+        else:
+            subtitle_text.insert(tk.END, text, "faded")
+
+    subtitle_text.insert(tk.END, "\n", "faded")
+
+
+def update_extra_subtitles(start, end, index, N=10):
+    if subtitles_ch is not None:
+        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
+        subtitle_text.insert(tk.END, "中文翻译:\n", "faded")
+        start_pre = max(0, start - N)
+        end_next = min(end + N, len(subtitles))
+        for i in range(start_pre, end_next):
+            lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+            text = "\n".join(lines) + "\n"
+            if i == start:
+                subtitle_text.insert(tk.END, "\n///\n", "faded")
+            elif i == end:
+                subtitle_text.insert(tk.END, "///\n\n", "faded")
+
+            if i == index:
+                subtitle_text.insert(tk.END, text, "center")
+            else:
+                subtitle_text.insert(tk.END, text, "faded")
+
+        subtitle_text.insert(tk.END, "\n///\n", "faded")
+        for i in range(start_pre, end_next):
+            lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
+            text = "\n".join(lines) + "\n"
+            if i == start:
+                subtitle_text.insert(tk.END, "\n///\n", "faded")
+            elif i == end:
+                subtitle_text.insert(tk.END, "///\n\n", "faded")
+
+            if i == index:
+                subtitle_text.insert(tk.END, text, "center")
+            else:
+                subtitle_text.insert(tk.END, text, "faded")
+
+        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
 
 
 # 更新进度控件
@@ -564,59 +654,16 @@ def update_subtitles_control():
     subtitle_text.delete("1.0", tk.END)
     subtitle_text.insert(tk.END, f"{index}/{len(subtitles)}\n", "faded")
 
-    for i in range(start, end):
-        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
-        text = "\n".join(lines) + "\n"
-
-        if i == index:
-            subtitle_text.insert(tk.END, text, "center")
-        else:
-            subtitle_text.insert(tk.END, text, "faded")
-
-    subtitle_text.insert(tk.END, "\n", "faded")
-
-    for i in range(start, end):
-        lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 1]
-        text = "\n".join(lines) + "\n"
-
-        if i == index:
-            subtitle_text.insert(tk.END, text, "center")
-        else:
-            subtitle_text.insert(tk.END, text, "faded")
-
-    if subtitles_ch is not None:
+    if subtitle_ch_first.get():
+        update_chinese_subtitles(start, end, index)
+        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n", "faded")
+        update_main_subtitles(start, end, index)
+    else:
+        update_main_subtitles(start, end, index)
         subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
-        subtitle_text.insert(tk.END, "中文翻译:\n", "faded")
-        start_pre = max(0, start - N)
-        end_next = min(end + N, len(subtitles))
-        for i in range(start_pre, end_next):
-            lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
-            text = "\n".join(lines) + "\n"
-            if i == start:
-                subtitle_text.insert(tk.END, "\n///\n", "faded")
-            elif i == end - 1:
-                subtitle_text.insert(tk.END, "///\n\n", "faded")
+        update_chinese_subtitles(start, end, index)
 
-            if i == index:
-                subtitle_text.insert(tk.END, text, "center")
-            else:
-                subtitle_text.insert(tk.END, text, "faded")
-
-        subtitle_text.insert(tk.END, "\n///\n", "faded")
-        for i in range(start_pre, end_next):
-            lines = [line for j, line in enumerate(subtitles[i][2].splitlines()) if j % 2 == 0]
-            text = "\n".join(lines) + "\n"
-            if i == start:
-                subtitle_text.insert(tk.END, "\n///\n", "faded")
-            elif i == end - 1:
-                subtitle_text.insert(tk.END, "///\n\n", "faded")
-
-            if i == index:
-                subtitle_text.insert(tk.END, text, "center")
-            else:
-                subtitle_text.insert(tk.END, text, "faded")
-
-        subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
+    update_extra_subtitles(start, end, index, N)
 
 
 # 更新进度控件
@@ -743,8 +790,13 @@ tk.Checkbutton(options_frame, text="显示字幕", variable=show_subtitle).pack(
 fullscreen = tk.BooleanVar(value=f_fullscreen)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
-subtitle_offset = tk.BooleanVar(value=f_subtitle_offset)  # 默认在第二屏幕
+subtitle_offset = tk.BooleanVar(value=f_subtitle_offset)
 tk.Checkbutton(options_frame, text="重置字幕偏移", variable=subtitle_offset).pack(
+    side=tk.LEFT, padx=10
+)
+
+subtitle_ch_first = tk.BooleanVar(value=f_subtitle_ch_first)
+tk.Checkbutton(options_frame, text="中文字幕在前", variable=subtitle_ch_first).pack(
     side=tk.LEFT, padx=10
 )
 
@@ -857,8 +909,8 @@ def toggle_window_state():
 
 
 def display_on_top():
-    if keyboard.is_pressed("ctrl") and keyboard.is_pressed("f"):
-        print("真正触发了 ctrl+f")
+    if keyboard.is_pressed("ctrl") and keyboard.is_pressed("t"):
+        print("真正触发了 ctrl+t")
         try:
             if root.state() == "iconic":
                 root.deiconify()  # 确保窗口可见
@@ -873,14 +925,16 @@ def display_on_top():
             root.attributes("-topmost", False)
             set_root_on_focus_without_event()
     else:
-        print("真正触发了 ctrl+f")
+        print("没有触发 ctrl+t")
 
 
 root.bind("<Left>", lambda event: on_prev())
+root.bind("<Control-Left>", lambda event: on_prev(True))
 root.bind("<Right>", lambda event: on_next())
+root.bind("<Control-Right>", lambda event: on_next(True))
 root.bind("<space>", lambda event: toggle_pause2())
 
 keyboard.add_hotkey("ctrl+d", lambda: toggle_window_state())
-keyboard.add_hotkey("ctrl+f", lambda: display_on_top())
+keyboard.add_hotkey("ctrl+t", lambda: display_on_top())
 
 root.mainloop()
