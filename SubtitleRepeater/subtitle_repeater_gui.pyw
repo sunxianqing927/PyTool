@@ -6,8 +6,6 @@ import os
 import json
 import time
 import pysrt
-import pysubs2
-import re
 import datetime
 import threading
 import keyboard  # 全局键盘监听
@@ -66,8 +64,7 @@ MPV_SOCKET_PATH = rf"\\.\pipe\mpvsocket_{os.getpid()}"
 video_path = ""
 subtitle_path = ""
 subtitles = []
-subtitles_ch = []
-running = False  # 控制 mpv 播放器的运行状态
+subtitles_sub2 = []
 g_current_index = AtomicInteger(0)
 paused = False
 close_mpv = False  # 用于控制 mpv 播放器的关闭
@@ -95,7 +92,7 @@ def auto_find_subtitle():
     if not video_path:
         return
     base = os.path.splitext(video_path)[0]
-    for ext in [".ass", ".srt"]:
+    for ext in [".srt"]:
         test_path = base + ext
         if os.path.exists(test_path):
             subtitle_path = test_path
@@ -110,25 +107,13 @@ def auto_find_subtitle():
 
 # === 加载字幕 ===
 def load_subtitles():
-    global subtitles, subtitles_ch
+    global subtitles, subtitles_sub2
     if not os.path.exists(subtitle_path):
         messagebox.showerror("错误", "字幕文件未找到！")
         return []
 
     try:
-        if subtitle_path.lower().endswith(".ass"):
-            subs = pysubs2.load(subtitle_path)
-            subtitles = [
-                (
-                    line.start / 1000,
-                    line.end / 1000,
-                    line.text.strip().replace("\\N", " ").replace("\n", " "),
-                )
-                for line in subs
-                if line.type == "Dialogue"
-            ]
-
-        elif subtitle_path.lower().endswith(".srt"):
+        if subtitle_path.lower().endswith(".srt"):
             subs = pysrt.open(subtitle_path)
             subtitles = [
                 (
@@ -139,11 +124,11 @@ def load_subtitles():
                 for sub in subs
             ]
 
-            subtitles_ch = None
-            new_path = subtitle_path[:-4] + ".txt"  # 去掉最后的 .str 再拼接
+            subtitles_sub2 = None
+            new_path = subtitle_path[:-4] + "_sub2.srt"  # 去掉最后的 .str 再拼接
             if os.path.exists(new_path):
                 subs = pysrt.open(new_path)
-                subtitles_ch = [
+                subtitles_sub2 = [
                     (
                         sub.start.ordinal / 1000,
                         sub.end.ordinal / 1000,
@@ -152,8 +137,8 @@ def load_subtitles():
                     for sub in subs
                 ]
 
-                if len(subtitles_ch) != len(subtitles):
-                    subtitles_ch = None
+                if len(subtitles_sub2) != len(subtitles):
+                    subtitles_sub2 = None
         else:
             messagebox.showerror("错误", "不支持的字幕格式！")
             subtitles = []
@@ -177,9 +162,7 @@ def update_video():
 # === 文件选择 ===
 def select_video():
     global video_path
-    path = filedialog.askopenfilename(
-        filetypes=[("视频文件", "*.mp4;*.mkv;*.avi"), ("所有文件", "*.*")]
-    )
+    path = filedialog.askopenfilename(filetypes=[("视频文件", "*.mp4;*.mkv;*.avi"), ("所有文件", "*.*")])
     if path:
         video_path = path
         g_current_index.set(0)
@@ -188,7 +171,7 @@ def select_video():
 
 def select_subtitle():
     global subtitle_path
-    path = filedialog.askopenfilename(filetypes=[("字幕文件", "*.ass;*.srt"), ("所有文件", "*.*")])
+    path = filedialog.askopenfilename(filetypes=[("字幕文件", "*.srt"), ("所有文件", "*.*")])
     if path:
         subtitle_path = path
         subtitle_label.config(text=f"字幕: {os.path.basename(path)}")
@@ -216,14 +199,6 @@ def seconds_to_srt_timestamp(seconds: float) -> str:
     return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
 
 
-# 获取以视频文件名命名的 notes.srt 文件名
-def get_notes_filename() -> str:
-    if not video_path:
-        return "notes.srt"
-    base = os.path.splitext(video_path)[0]  # 不用 basename，保留路径
-    return f"{base}_notes.srt"
-
-
 # === 字幕显示窗口 ===
 subtitle_display_window = None
 subtitle_text = None
@@ -244,6 +219,10 @@ def show_subtitle_window():
     subtitle_display_window.configure(bg="black")
     subtitle_display_window.geometry("470x1000+1450+0")
     subtitle_display_window.protocol("WM_DELETE_WINDOW", on_close_subtitle_display_window)
+
+    subtitle_display_window.bind("<Unmap>", minimize_other)  # 最小化时触发
+    subtitle_display_window.bind("<Map>", restore_other)
+    subtitle_display_window.bind("<FocusIn>", on_focus_in)
 
     subtitle_display_window.bind("<Left>", lambda event: on_prev())
     subtitle_display_window.bind("<Control-Left>", lambda event: on_prev(True))
@@ -376,11 +355,9 @@ def save_all_params():
 
 
 def auto_repeat_all():
-    global running
     speed = 1.0
     playback_counts = 0
     index = 0
-    running = True  # 控制循环的运行状态
     try:
         while True:
             if index != g_current_index.get():
@@ -453,9 +430,7 @@ def auto_repeat_all():
                 playback_counts += 1
                 current_repeat_label.after(
                     0,
-                    lambda: current_repeat_label.config(
-                        text="当前复读次数: " + str(playback_counts)
-                    ),
+                    lambda: current_repeat_label.config(text="当前复读次数: " + str(playback_counts)),
                 )
                 start_time = time.time()
                 while time.time() - start_time < duration_speed:
@@ -517,7 +492,6 @@ def auto_repeat_all():
         print(f"auto_repeat_all exit: {e}")
     finally:
         print("无论是否异常，这里都会执行（类似析构）")
-        running = False  # 停止循环
         save_all_params()
         messagebox.showwarning("警告", "循环控制线程已经退出")
 
@@ -584,11 +558,11 @@ def update_main_subtitles(start, end, index):
 
 
 def update_chinese_subtitles(start, end, index):
-    if subtitles_ch is None:
+    if subtitles_sub2 is None:
         return  # 如果没有中文字幕，直接返回
 
     for i in range(start, end):
-        lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+        lines = [line for j, line in enumerate(subtitles_sub2[i][2].splitlines())]
         text = "\n".join(lines) + "\n"
 
         if i == index:
@@ -600,13 +574,13 @@ def update_chinese_subtitles(start, end, index):
 
 
 def update_extra_subtitles(start, end, index, N=10):
-    if subtitles_ch is not None:
+    if subtitles_sub2 is not None:
         subtitle_text.insert(tk.END, "\n\n\n\n\n\n\n\n\n\n", "faded")
-        subtitle_text.insert(tk.END, "中文翻译:\n", "faded")
+        subtitle_text.insert(tk.END, "sub2 subtitles:\n", "faded")
         start_pre = max(0, start - N)
         end_next = min(end + N, len(subtitles))
         for i in range(start_pre, end_next):
-            lines = [line for j, line in enumerate(subtitles_ch[i][2].splitlines())]
+            lines = [line for j, line in enumerate(subtitles_sub2[i][2].splitlines())]
             text = "\n".join(lines) + "\n"
             if i == start:
                 subtitle_text.insert(tk.END, "\n///\n", "faded")
@@ -688,15 +662,9 @@ def toggle_pause2():
 
 
 def minimize_other(event=None):
-    if event.widget != root:
+    global paused, subtitle_display_window
+    if event.widget != subtitle_display_window:
         return  # 确保是根窗口触发的事件
-    global paused, subtitle_display_window, running, paused
-    if subtitle_display_window and subtitle_display_window.winfo_exists():
-        subtitle_display_window.wm_state("iconic")
-
-    if running:
-        paused = False  # 设置暂停状态
-        toggle_pause()  # 切换暂停状态
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -706,16 +674,9 @@ def minimize_other(event=None):
 
 
 def restore_other(event=None):
-    if event.widget != root:
+    global paused, subtitle_display_window
+    if event.widget != subtitle_display_window:
         return  # 确保是根窗口触发的事件
-
-    global subtitle_display_window, running, paused
-    if subtitle_display_window and subtitle_display_window.winfo_exists():
-        subtitle_display_window.wm_state("normal")
-
-    if running:
-        paused = True  # 设置播放状态
-        toggle_pause()
 
     windows = gw.getWindowsWithTitle("mpv")
     if windows:
@@ -730,7 +691,7 @@ def on_close():
             command = {"command": ["quit"]}
             sock.write((json.dumps(command) + "\n").encode("utf-8"))
     except Exception as e:
-        print(f"on_focus_in False: {e}")
+        print(f"on_close False: {e}")
 
     save_all_params()
     root.destroy()
@@ -738,11 +699,10 @@ def on_close():
 
 
 def on_focus_in(event):
-    print("Root window got focus!")
     global subtitle_display_window
-    if subtitle_display_window and subtitle_display_window.winfo_exists():
-        subtitle_display_window.attributes("-topmost", True)
-
+    if event.widget != subtitle_display_window:
+        return  # 确保是根窗口触发的事件
+    print("window got focus!")
     try:
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "ontop", True]}
@@ -751,8 +711,6 @@ def on_focus_in(event):
         print(f"on_focus_in True: {e}")
 
     time.sleep(0.1)  # 确保 mpv 窗口已准备好接收命令
-    if subtitle_display_window and subtitle_display_window.winfo_exists():
-        subtitle_display_window.attributes("-topmost", False)
     try:
         with open(MPV_SOCKET_PATH, "wb") as sock:
             command = {"command": ["set_property", "ontop", False]}
@@ -765,18 +723,13 @@ def on_focus_in(event):
 root = tk.Tk()
 root.title("Subtitle Repeater (Atomic with Delay & Subtitle Toggle)")
 root.geometry("470x600+1450+340")
-root.bind("<Unmap>", minimize_other)  # 最小化时触发
-root.bind("<Map>", restore_other)
-root.bind("<FocusIn>", on_focus_in)
-
 root.protocol("WM_DELETE_WINDOW", on_close)
-
 
 tk.Button(root, text="选择视频文件", command=select_video).pack(pady=5)
 video_label = tk.Label(root, text="视频: 未选择")
 video_label.pack()
 
-tk.Button(root, text="选择字幕文件 (.ass ,.srt)", command=select_subtitle).pack(pady=5)
+tk.Button(root, text="选择字幕文件 (.srt)", command=select_subtitle).pack(pady=5)
 subtitle_label = tk.Label(root, text="字幕: 未选择")
 subtitle_label.pack()
 
@@ -791,14 +744,10 @@ fullscreen = tk.BooleanVar(value=f_fullscreen)
 tk.Checkbutton(options_frame, text="全屏", variable=fullscreen).pack(side=tk.LEFT)
 
 subtitle_offset = tk.BooleanVar(value=f_subtitle_offset)
-tk.Checkbutton(options_frame, text="重置字幕偏移", variable=subtitle_offset).pack(
-    side=tk.LEFT, padx=10
-)
+tk.Checkbutton(options_frame, text="重置字幕偏移", variable=subtitle_offset).pack(side=tk.LEFT, padx=10)
 
 subtitle_ch_first = tk.BooleanVar(value=f_subtitle_ch_first)
-tk.Checkbutton(options_frame, text="中文字幕在前", variable=subtitle_ch_first).pack(
-    side=tk.LEFT, padx=10
-)
+tk.Checkbutton(options_frame, text="中文字幕在前", variable=subtitle_ch_first).pack(side=tk.LEFT, padx=10)
 
 repeat_frame = tk.Frame(root)
 repeat_frame.pack(pady=3)
@@ -837,9 +786,7 @@ subtitles_entry.pack(side=tk.LEFT)
 adjust_begin = tk.Frame(root)
 adjust_begin.pack(pady=3)
 tk.Label(adjust_begin, text="调整播放开始时间:").pack(side=tk.LEFT)
-adjust_begin_slider = tk.Scale(
-    adjust_begin, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
-)
+adjust_begin_slider = tk.Scale(adjust_begin, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200)
 adjust_begin_slider.pack(side=tk.LEFT)
 adjust_begin_slider.set(0.0)  # 默认 0 秒
 
@@ -847,9 +794,7 @@ adjust_begin_slider.set(0.0)  # 默认 0 秒
 adjust_end = tk.Frame(root)
 adjust_end.pack(pady=3)
 tk.Label(adjust_end, text="调整播放结束时间:").pack(side=tk.LEFT)
-adjust_end_slider = tk.Scale(
-    adjust_end, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
-)
+adjust_end_slider = tk.Scale(adjust_end, from_=-2.0, to=+2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200)
 adjust_end_slider.pack(side=tk.LEFT)
 adjust_end_slider.set(0.0)  # 默认 0 秒
 
@@ -858,15 +803,11 @@ speed_frame = tk.Frame(root)
 speed_frame.pack(pady=3)
 tk.Label(speed_frame, text="播放速度:").pack(side=tk.LEFT)
 
-speed_slider = tk.Scale(
-    speed_frame, from_=0.1, to=2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200
-)
+speed_slider = tk.Scale(speed_frame, from_=0.1, to=2.0, resolution=0.01, orient=tk.HORIZONTAL, length=200)
 speed_slider.set(f_speed_slider)  # 默认 1 倍速
 speed_slider.pack(side=tk.LEFT)
 
-skip_slider = tk.Scale(
-    root, from_=0, to=10, orient=tk.HORIZONTAL, length=300, command=on_slider_change
-)
+skip_slider = tk.Scale(root, from_=0, to=10, orient=tk.HORIZONTAL, length=300, command=on_slider_change)
 skip_slider.pack()
 
 skip_frame = tk.Frame(root)
@@ -886,24 +827,15 @@ if os.path.exists(video_path):
     update_video()  # 如果视频路径已存在，更新视频信息
 
 
-def set_root_on_focus_without_event():
-    callback = root.bind("<FocusIn>")
-    root.unbind("<FocusIn>")
-    root.focus_force()
-    root.bind("<FocusIn>", callback)
-
-
 def toggle_window_state():
+    global subtitle_display_window
     if keyboard.is_pressed("ctrl") and keyboard.is_pressed("d"):
         print("真正触发了 ctrl+d")
-        if root.state() == "normal":
-            root.iconify()  # 最小化
-        elif root.state() == "iconic":
-            root.deiconify()  # 还原
-            root.attributes("-topmost", True)  # 设置根窗口为最上层
-            time.sleep(0.1)
-            root.attributes("-topmost", False)
-        set_root_on_focus_without_event()
+        if subtitle_display_window:
+            if subtitle_display_window.state() == "normal":
+                subtitle_display_window.iconify()  # 最小化
+            elif subtitle_display_window.state() == "iconic":
+                subtitle_display_window.deiconify()  # 还原
     else:
         print("没有触发 ctrl+d")
 
@@ -911,28 +843,14 @@ def toggle_window_state():
 def display_on_top():
     if keyboard.is_pressed("ctrl") and keyboard.is_pressed("t"):
         print("真正触发了 ctrl+t")
-        try:
-            if root.state() == "iconic":
-                root.deiconify()  # 确保窗口可见
-                return
 
-            on_focus_in(None)
-        except Exception as e:
-            print(f"设置最上层失败: {e}")
-        finally:
-            root.attributes("-topmost", True)  # 设置根窗口为最上层
-            time.sleep(0.1)
-            root.attributes("-topmost", False)
-            set_root_on_focus_without_event()
+        if root.state() == "iconic":
+            root.deiconify()  # 确保窗口可见
+        else:
+            root.iconify()  # 隐藏窗口
     else:
         print("没有触发 ctrl+t")
 
-
-root.bind("<Left>", lambda event: on_prev())
-root.bind("<Control-Left>", lambda event: on_prev(True))
-root.bind("<Right>", lambda event: on_next())
-root.bind("<Control-Right>", lambda event: on_next(True))
-root.bind("<space>", lambda event: toggle_pause2())
 
 keyboard.add_hotkey("ctrl+d", lambda: toggle_window_state())
 keyboard.add_hotkey("ctrl+t", lambda: display_on_top())

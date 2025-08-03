@@ -7,3 +7,4 @@ SubtitleRepeater/srt_phonetic_injector.spec
 SubtitleRepeater/tmp.txt
 params.json
 SubtitleRepeater/packet_exe.bat
+SubtitleRepeater/srt2docx.spec
